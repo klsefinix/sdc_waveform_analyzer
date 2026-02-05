@@ -197,6 +197,20 @@
             color: var(--text-secondary);
         }
 
+        .btn-clear {
+            font-size: 11px;
+            padding: 5px 10px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        .btn-clear:hover {
+            background: rgba(240, 113, 120, 0.1);
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
         .loaded-files-info {
             font-size: 11px;
             color: var(--text-muted);
@@ -295,20 +309,15 @@
             color: var(--text-muted);
         }
 
-        .editor-footer {
-            padding: 12px 16px;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
         .parse-status {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-muted);
             display: flex;
             align-items: center;
             gap: 6px;
+            padding: 8px 0 4px 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 8px;
         }
 
         .parse-status.success {
@@ -504,6 +513,21 @@
         .clock-card-badge.generated {
             background: rgba(210, 166, 255, 0.15);
             color: var(--accent-magenta);
+        }
+
+        .clock-card-badge.virtual {
+            background: rgba(255, 143, 64, 0.15);
+            color: var(--accent-orange);
+        }
+
+        .clock-card-badge.base {
+            background: rgba(127, 217, 98, 0.15);
+            color: var(--accent-green);
+        }
+
+        .clock-card-badge.bare {
+            background: rgba(89, 194, 255, 0.15);
+            color: var(--accent-cyan);
         }
 
         .clock-card-body {
@@ -770,11 +794,22 @@
             <div class="sidebar-header">
                 <div class="sidebar-header-row">
                     <span class="sidebar-title">SDC Constraints</span>
+                    <button class="btn btn-clear" onclick="clearEditor()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        Clear Design
+                    </button>
                 </div>
                 <div id="loadedFilesInfo" class="loaded-files-info">
                     <span>Loaded files (processed in order):</span>
                     <div id="loadedFilesList" class="loaded-files-list"></div>
                 </div>
+                <span id="parseStatus" class="parse-status">
+                    <span class="parse-status-dot"></span>
+                    Ready
+                </span>
             </div>
             <div class="editor-container">
                 <div id="editorWrapper" class="editor-wrapper">
@@ -799,13 +834,6 @@
 # Example:
 # create_clock -name clk_sys -period 10 [get_ports clk]
 # create_generated_clock -name clk_div2 -source [get_ports clk] -divide_by 2 [get_pins div/Q]"></textarea>
-                </div>
-                <div class="editor-footer">
-                    <span id="parseStatus" class="parse-status">
-                        <span class="parse-status-dot"></span>
-                        Ready
-                    </span>
-                    <button class="btn" onclick="clearEditor()">Clear</button>
                 </div>
             </div>
         </aside>
@@ -1192,10 +1220,12 @@
                         line = line.slice(0, -1) + ' ' + lines[i].trim();
                     }
                     
-                    if (line.startsWith('create_clock')) {
-                        this.parseCreateClock(line);
-                    } else if (line.startsWith('create_generated_clock')) {
+                    // IMPORTANT: Check create_generated_clock BEFORE create_clock
+                    // because create_generated_clock starts with "create_clock" substring
+                    if (line.startsWith('create_generated_clock')) {
                         this.parseGeneratedClock(line);
+                    } else if (line.startsWith('create_clock')) {
+                        this.parseCreateClock(line);
                     } else if (line.startsWith('set_multicycle_path')) {
                         this.parseMulticyclePath(line);
                     } else if (line.startsWith('set_max_delay')) {
@@ -1318,11 +1348,11 @@
                 const clock = {
                     type: 'base',
                     name: '',
-                    period: 10,
+                    period: null,
                     waveform: null,
                     frequency: null,
                     source: '',
-                    targetType: '', // 'port', 'pin', 'net', or 'register'
+                    targetType: '', // 'port', 'pin', 'net', 'register', 'virtual', or 'bare'
                     targetNode: ''
                 };
 
@@ -1330,9 +1360,15 @@
                 const nameMatch = line.match(/-name\s+(\S+)/);
                 if (nameMatch) clock.name = nameMatch[1];
 
-                // Parse -period (in ns or frequency in MHz)
+                // Parse -period (required for valid clock)
                 const periodMatch = line.match(/-period\s+([\d.]+)/);
-                if (periodMatch) clock.period = parseFloat(periodMatch[1]);
+                if (periodMatch) {
+                    clock.period = parseFloat(periodMatch[1]);
+                } else {
+                    // No period found - not a valid create_clock command
+                    console.warn('Skipping create_clock without -period:', line.substring(0, 80));
+                    return;
+                }
 
                 // Parse -waveform {rise fall}
                 const waveformMatch = line.match(/-waveform\s*\{([^}]+)\}/);
@@ -1347,18 +1383,39 @@
                 clock.frequency = 1000 / clock.period; // MHz
 
                 // Parse target node (get_ports, get_pins, get_nets, or get_registers)
-                const targetMatch = line.match(/\[get_(ports|pins|nets|registers)\s+([^\]]+)\]/);
+                const targetMatch = line.match(/\[get_(ports|pins|nets|registers)\s+\{?([^\]\}]+)\}?\]/);
                 if (targetMatch) {
                     clock.targetType = targetMatch[1];
                     clock.targetNode = targetMatch[2].trim().replace(/[{}]/g, '');
                     clock.source = clock.targetNode;
                 }
 
-                // Generate name from target node if -name not provided
+                // Check for bare identifier at end of line (node name without get_* wrapper)
+                // This handles cases like: create_clock -period 10 -name mipi_clk mipi_clk
+                // Or: create_clock -period 10 mipi_clk
+                if (!clock.targetNode) {
+                    // Remove known options and see what's left at the end
+                    let remaining = line
+                        .replace(/create_clock\s+/, '')
+                        .replace(/-period\s+[\d.]+\s*/, '')
+                        .replace(/-waveform\s*\{[^}]+\}\s*/, '')
+                        .replace(/-name\s+\S+\s*/, '')
+                        .replace(/-add\s*/, '')
+                        .replace(/\[get_\w+\s+[^\]]+\]\s*/, '') // Remove any get_* that might be there
+                        .trim();
+                    
+                    // If there's a bare identifier left, it's the target node
+                    if (remaining && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(remaining)) {
+                        clock.targetNode = remaining;
+                        clock.source = remaining;
+                        clock.targetType = 'bare'; // Bare node reference (likely a port)
+                    }
+                }
+
+                // Determine clock name if not explicitly provided
                 if (!clock.name) {
                     if (clock.targetNode) {
-                        // Clean up the target node name to create a valid clock name
-                        // Remove wildcards, special chars, and create a readable name
+                        // Use target node to generate name
                         let cleanName = clock.targetNode
                             .replace(/\*/g, '')
                             .replace(/[^a-zA-Z0-9_\/]/g, '_')
@@ -1376,8 +1433,16 @@
                         
                         clock.name = cleanName || `clk_${this.clocks.length}`;
                     } else {
-                        clock.name = `clk_${this.clocks.length}`;
+                        // No target node and no name - this is a virtual clock (shouldn't happen often)
+                        console.warn('Skipping create_clock - cannot determine name:', line.substring(0, 80));
+                        return;
                     }
+                }
+
+                // If we have a name but no target, it's a virtual clock
+                if (!clock.targetNode) {
+                    clock.targetType = 'virtual';
+                    clock.source = clock.name;
                 }
 
                 this.clocks.push(clock);
@@ -1451,8 +1516,31 @@
                 const targetMatch = line.match(/\[get_(ports|pins|registers)\s+([^\]]+)\]\s*$/);
                 if (targetMatch) genClk.source = targetMatch[2].trim();
 
-                // Generate name if not provided
-                if (!genClk.name) genClk.name = `gen_clk_${this.generatedClocks.length}`;
+                // Validate: must have either -source or -master_clock to be valid
+                if (!genClk.masterClock && !genClk.masterClockName) {
+                    console.warn('Skipping create_generated_clock without -source or -master_clock:', line.substring(0, 80));
+                    return;
+                }
+
+                // Generate name if not provided - use source target if available
+                if (!genClk.name) {
+                    if (genClk.source) {
+                        // Clean up source name for clock name
+                        let cleanName = genClk.source
+                            .replace(/\*/g, '')
+                            .replace(/[^a-zA-Z0-9_\/]/g, '_')
+                            .replace(/\/+/g, '_')
+                            .replace(/_+/g, '_')
+                            .replace(/^_|_$/g, '');
+                        const parts = cleanName.split('_').filter(p => p.length > 0);
+                        if (parts.length > 0) {
+                            cleanName = parts[parts.length - 1];
+                        }
+                        genClk.name = cleanName || `gen_clk_${this.generatedClocks.length}`;
+                    } else {
+                        genClk.name = `gen_clk_${this.generatedClocks.length}`;
+                    }
+                }
 
                 this.generatedClocks.push(genClk);
             }
@@ -1737,17 +1825,27 @@
                         };
 
                         // Calculate DERIVED (natural) timing - no MCP applied
-                        const derivedAtoB = this.calculateTimingRelationship(
+                        // Setup analysis
+                        const derivedAtoBSetup = this.calculateTimingRelationship(
                             clockAEdges.riseEdges, clockBEdges.riseEdges,
                             clockAData, clockBData, 'setup', totalTime, { setup: 1, hold: 0 }
                         );
-                        const derivedBtoA = this.calculateTimingRelationship(
+                        const derivedBtoASetup = this.calculateTimingRelationship(
                             clockBEdges.riseEdges, clockAEdges.riseEdges,
                             clockBData, clockAData, 'setup', totalTime, { setup: 1, hold: 0 }
                         );
+                        // Hold analysis
+                        const derivedAtoBHold = this.calculateTimingRelationship(
+                            clockAEdges.riseEdges, clockBEdges.riseEdges,
+                            clockAData, clockBData, 'hold', totalTime, { setup: 1, hold: 0 }
+                        );
+                        const derivedBtoAHold = this.calculateTimingRelationship(
+                            clockBEdges.riseEdges, clockAEdges.riseEdges,
+                            clockBData, clockAData, 'hold', totalTime, { setup: 1, hold: 0 }
+                        );
 
                         if (analysisType === 'bidirectional') {
-                            // Bidirectional CDC analysis with MCP
+                            // Bidirectional CDC analysis with MCP - Setup
                             const aToBSetup = this.calculateTimingRelationship(
                                 clockAEdges.riseEdges, clockBEdges.riseEdges,
                                 clockAData, clockBData, 'setup', totalTime, mcpAtoB
@@ -1756,6 +1854,15 @@
                                 clockBEdges.riseEdges, clockAEdges.riseEdges,
                                 clockBData, clockAData, 'setup', totalTime, mcpBtoA
                             );
+                            // Bidirectional CDC analysis with MCP - Hold
+                            const aToBHold = this.calculateTimingRelationship(
+                                clockAEdges.riseEdges, clockBEdges.riseEdges,
+                                clockAData, clockBData, 'hold', totalTime, mcpAtoB
+                            );
+                            const bToAHold = this.calculateTimingRelationship(
+                                clockBEdges.riseEdges, clockAEdges.riseEdges,
+                                clockBData, clockAData, 'hold', totalTime, mcpBtoA
+                            );
 
                             this.drawBidirectionalTimingMarkers(
                                 aToBSetup, bToASetup, displayClocks,
@@ -1763,8 +1870,10 @@
                             );
 
                             this.updateBidirectionalTimingTable(
-                                derivedAtoB, derivedBtoA,
-                                aToBSetup, bToASetup,
+                                { setup: derivedAtoBSetup, hold: derivedAtoBHold },
+                                { setup: derivedBtoASetup, hold: derivedBtoAHold },
+                                { setup: aToBSetup, hold: aToBHold },
+                                { setup: bToASetup, hold: bToAHold },
                                 launchClock, latchClock, 
                                 mcpAtoB, mcpBtoA,
                                 timingExceptions
@@ -1782,8 +1891,9 @@
                                 timeToX, mcpAtoB
                             );
 
+                            const derivedResult = analysisType === 'setup' ? derivedAtoBSetup : derivedAtoBHold;
                             this.updateTimingTable(
-                                derivedAtoB, timingResult, 
+                                derivedResult, timingResult, 
                                 launchClock, latchClock, 
                                 analysisType, mcpAtoB,
                                 timingExceptions?.aToB
@@ -2391,12 +2501,19 @@
                 const panel = document.getElementById('timingPanel');
                 const tbody = document.getElementById('timingTableBody');
                 
-                const hasDerivedAtoB = derivedAtoB && derivedAtoB.length > 0;
-                const hasDerivedBtoA = derivedBtoA && derivedBtoA.length > 0;
-                const hasAdjustedAtoB = adjustedAtoB && adjustedAtoB.length > 0;
-                const hasAdjustedBtoA = adjustedBtoA && adjustedBtoA.length > 0;
+                // Now derivedAtoB/BtoA and adjustedAtoB/BtoA are objects with {setup, hold} arrays
+                const hasDerivedAtoBSetup = derivedAtoB?.setup?.length > 0;
+                const hasDerivedAtoBHold = derivedAtoB?.hold?.length > 0;
+                const hasDerivedBtoASetup = derivedBtoA?.setup?.length > 0;
+                const hasDerivedBtoAHold = derivedBtoA?.hold?.length > 0;
+                const hasAdjustedAtoBSetup = adjustedAtoB?.setup?.length > 0;
+                const hasAdjustedAtoBHold = adjustedAtoB?.hold?.length > 0;
+                const hasAdjustedBtoASetup = adjustedBtoA?.setup?.length > 0;
+                const hasAdjustedBtoAHold = adjustedBtoA?.hold?.length > 0;
 
-                if (!hasDerivedAtoB && !hasDerivedBtoA && !hasAdjustedAtoB && !hasAdjustedBtoA) {
+                const hasAnyData = hasDerivedAtoBSetup || hasDerivedBtoASetup || hasAdjustedAtoBSetup || hasAdjustedBtoASetup;
+
+                if (!hasAnyData) {
                     panel.style.display = 'none';
                     return;
                 }
@@ -2410,6 +2527,19 @@
                 const hasExceptionsBA = mcpBtoA.setup > 1 || mcpBtoA.hold > 0 ||
                                         timingExceptions?.bToA?.maxDelay || timingExceptions?.bToA?.minDelay;
 
+                // Helper function to create timing row
+                const createTimingRow = (label, result, colorClass) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${label}</td>
+                        <td class="timing-value">${result.launchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${result.latchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${result.window.toFixed(3)} ns</td>
+                        <td><span style="color: ${colorClass};">Worst Case</span></td>
+                    `;
+                    return row;
+                };
+
                 // ========================================
                 // DERIVED (Natural) Clock Relationships
                 // ========================================
@@ -2422,7 +2552,7 @@
                 tbody.appendChild(derivedSectionHeader);
 
                 // A→B Derived
-                if (hasDerivedAtoB) {
+                if (hasDerivedAtoBSetup || hasDerivedAtoBHold) {
                     const sectionRow = document.createElement('tr');
                     sectionRow.innerHTML = `
                         <td colspan="5" style="background: rgba(127, 217, 98, 0.08); color: #7fd962; font-weight: 500; padding: 6px 16px; font-size: 11px;">
@@ -2431,20 +2561,16 @@
                     `;
                     tbody.appendChild(sectionRow);
 
-                    const worst = derivedAtoB[0];
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>Setup (Derived)</td>
-                        <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
-                        <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
-                        <td class="timing-value">${worst.window.toFixed(3)} ns</td>
-                        <td><span style="color: #7fd962;">Worst Case</span></td>
-                    `;
-                    tbody.appendChild(row);
+                    if (hasDerivedAtoBSetup) {
+                        tbody.appendChild(createTimingRow('Setup (Max Path)', derivedAtoB.setup[0], '#7fd962'));
+                    }
+                    if (hasDerivedAtoBHold) {
+                        tbody.appendChild(createTimingRow('Hold (Min Path)', derivedAtoB.hold[0], '#95e6cb'));
+                    }
                 }
 
                 // B→A Derived
-                if (hasDerivedBtoA) {
+                if (hasDerivedBtoASetup || hasDerivedBtoAHold) {
                     const sectionRow = document.createElement('tr');
                     sectionRow.innerHTML = `
                         <td colspan="5" style="background: rgba(89, 194, 255, 0.08); color: #59c2ff; font-weight: 500; padding: 6px 16px; font-size: 11px;">
@@ -2453,16 +2579,12 @@
                     `;
                     tbody.appendChild(sectionRow);
 
-                    const worst = derivedBtoA[0];
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>Setup (Derived)</td>
-                        <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
-                        <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
-                        <td class="timing-value">${worst.window.toFixed(3)} ns</td>
-                        <td><span style="color: #59c2ff;">Worst Case</span></td>
-                    `;
-                    tbody.appendChild(row);
+                    if (hasDerivedBtoASetup) {
+                        tbody.appendChild(createTimingRow('Setup (Max Path)', derivedBtoA.setup[0], '#59c2ff'));
+                    }
+                    if (hasDerivedBtoAHold) {
+                        tbody.appendChild(createTimingRow('Hold (Min Path)', derivedBtoA.hold[0], '#95e6cb'));
+                    }
                 }
 
                 // ========================================
@@ -2478,12 +2600,12 @@
                     tbody.appendChild(adjustedSectionHeader);
 
                     // A→B Adjusted
-                    if (hasExceptionsAB && hasAdjustedAtoB) {
+                    if (hasExceptionsAB && (hasAdjustedAtoBSetup || hasAdjustedAtoBHold)) {
                         let exceptionInfo = [];
-                        if (mcpAtoB.setup > 1) exceptionInfo.push(`MCP Setup=${mcpAtoB.setup} (-${mcpAtoB.setupRef})`);
-                        if (mcpAtoB.hold > 0) exceptionInfo.push(`MCP Hold=${mcpAtoB.hold} (-${mcpAtoB.holdRef})`);
-                        if (timingExceptions?.aToB?.maxDelay) exceptionInfo.push(`set_max_delay ${timingExceptions.aToB.maxDelay.value}ns`);
-                        if (timingExceptions?.aToB?.minDelay) exceptionInfo.push(`set_min_delay ${timingExceptions.aToB.minDelay.value}ns`);
+                        if (mcpAtoB.setup > 1) exceptionInfo.push(`MCP Setup=${mcpAtoB.setup}`);
+                        if (mcpAtoB.hold > 0) exceptionInfo.push(`MCP Hold=${mcpAtoB.hold}`);
+                        if (timingExceptions?.aToB?.maxDelay) exceptionInfo.push(`max_delay=${timingExceptions.aToB.maxDelay.value}ns`);
+                        if (timingExceptions?.aToB?.minDelay) exceptionInfo.push(`min_delay=${timingExceptions.aToB.minDelay.value}ns`);
 
                         const sectionRow = document.createElement('tr');
                         sectionRow.innerHTML = `
@@ -2493,41 +2615,49 @@
                         `;
                         tbody.appendChild(sectionRow);
 
-                        const worst = adjustedAtoB[0];
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>Setup (Adjusted)</td>
-                            <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
-                            <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
-                            <td class="timing-value">${worst.window.toFixed(3)} ns</td>
-                            <td><span style="color: var(--accent-magenta);">Critical Path</span></td>
-                        `;
-                        tbody.appendChild(row);
-
-                        // Show impact
-                        if (hasDerivedAtoB) {
-                            const derivedWindow = derivedAtoB[0].window;
-                            const adjustedWindow = worst.window;
-                            const diff = adjustedWindow - derivedWindow;
-                            const relaxed = diff > 0;
+                        if (hasAdjustedAtoBSetup) {
+                            const row = createTimingRow('Setup (Adjusted)', adjustedAtoB.setup[0], 'var(--accent-magenta)');
+                            tbody.appendChild(row);
                             
-                            const impactRow = document.createElement('tr');
-                            impactRow.innerHTML = `
-                                <td colspan="5" style="padding: 4px 16px 8px 32px; font-size: 11px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
-                                    ${relaxed ? '↑' : '↓'} ${relaxed ? 'Relaxed' : 'Tightened'} by ${Math.abs(diff).toFixed(3)} ns (${derivedWindow.toFixed(2)} → ${adjustedWindow.toFixed(2)} ns)
-                                </td>
-                            `;
-                            tbody.appendChild(impactRow);
+                            // Show setup impact
+                            if (hasDerivedAtoBSetup) {
+                                const diff = adjustedAtoB.setup[0].window - derivedAtoB.setup[0].window;
+                                const relaxed = diff > 0;
+                                const impactRow = document.createElement('tr');
+                                impactRow.innerHTML = `
+                                    <td colspan="5" style="padding: 2px 16px 4px 32px; font-size: 10px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                        Setup: ${relaxed ? '↑ Relaxed' : '↓ Tightened'} by ${Math.abs(diff).toFixed(3)} ns
+                                    </td>
+                                `;
+                                tbody.appendChild(impactRow);
+                            }
+                        }
+                        if (hasAdjustedAtoBHold) {
+                            const row = createTimingRow('Hold (Adjusted)', adjustedAtoB.hold[0], 'var(--accent-magenta)');
+                            tbody.appendChild(row);
+                            
+                            // Show hold impact
+                            if (hasDerivedAtoBHold) {
+                                const diff = adjustedAtoB.hold[0].window - derivedAtoB.hold[0].window;
+                                const relaxed = diff > 0;
+                                const impactRow = document.createElement('tr');
+                                impactRow.innerHTML = `
+                                    <td colspan="5" style="padding: 2px 16px 4px 32px; font-size: 10px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                        Hold: ${relaxed ? '↑ Relaxed' : '↓ Tightened'} by ${Math.abs(diff).toFixed(3)} ns
+                                    </td>
+                                `;
+                                tbody.appendChild(impactRow);
+                            }
                         }
                     }
 
                     // B→A Adjusted
-                    if (hasExceptionsBA && hasAdjustedBtoA) {
+                    if (hasExceptionsBA && (hasAdjustedBtoASetup || hasAdjustedBtoAHold)) {
                         let exceptionInfo = [];
-                        if (mcpBtoA.setup > 1) exceptionInfo.push(`MCP Setup=${mcpBtoA.setup} (-${mcpBtoA.setupRef})`);
-                        if (mcpBtoA.hold > 0) exceptionInfo.push(`MCP Hold=${mcpBtoA.hold} (-${mcpBtoA.holdRef})`);
-                        if (timingExceptions?.bToA?.maxDelay) exceptionInfo.push(`set_max_delay ${timingExceptions.bToA.maxDelay.value}ns`);
-                        if (timingExceptions?.bToA?.minDelay) exceptionInfo.push(`set_min_delay ${timingExceptions.bToA.minDelay.value}ns`);
+                        if (mcpBtoA.setup > 1) exceptionInfo.push(`MCP Setup=${mcpBtoA.setup}`);
+                        if (mcpBtoA.hold > 0) exceptionInfo.push(`MCP Hold=${mcpBtoA.hold}`);
+                        if (timingExceptions?.bToA?.maxDelay) exceptionInfo.push(`max_delay=${timingExceptions.bToA.maxDelay.value}ns`);
+                        if (timingExceptions?.bToA?.minDelay) exceptionInfo.push(`min_delay=${timingExceptions.bToA.minDelay.value}ns`);
 
                         const sectionRow = document.createElement('tr');
                         sectionRow.innerHTML = `
@@ -2537,31 +2667,39 @@
                         `;
                         tbody.appendChild(sectionRow);
 
-                        const worst = adjustedBtoA[0];
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>Setup (Adjusted)</td>
-                            <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
-                            <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
-                            <td class="timing-value">${worst.window.toFixed(3)} ns</td>
-                            <td><span style="color: var(--accent-magenta);">Critical Path</span></td>
-                        `;
-                        tbody.appendChild(row);
-
-                        // Show impact
-                        if (hasDerivedBtoA) {
-                            const derivedWindow = derivedBtoA[0].window;
-                            const adjustedWindow = worst.window;
-                            const diff = adjustedWindow - derivedWindow;
-                            const relaxed = diff > 0;
+                        if (hasAdjustedBtoASetup) {
+                            const row = createTimingRow('Setup (Adjusted)', adjustedBtoA.setup[0], 'var(--accent-magenta)');
+                            tbody.appendChild(row);
                             
-                            const impactRow = document.createElement('tr');
-                            impactRow.innerHTML = `
-                                <td colspan="5" style="padding: 4px 16px 8px 32px; font-size: 11px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
-                                    ${relaxed ? '↑' : '↓'} ${relaxed ? 'Relaxed' : 'Tightened'} by ${Math.abs(diff).toFixed(3)} ns (${derivedWindow.toFixed(2)} → ${adjustedWindow.toFixed(2)} ns)
-                                </td>
-                            `;
-                            tbody.appendChild(impactRow);
+                            // Show setup impact
+                            if (hasDerivedBtoASetup) {
+                                const diff = adjustedBtoA.setup[0].window - derivedBtoA.setup[0].window;
+                                const relaxed = diff > 0;
+                                const impactRow = document.createElement('tr');
+                                impactRow.innerHTML = `
+                                    <td colspan="5" style="padding: 2px 16px 4px 32px; font-size: 10px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                        Setup: ${relaxed ? '↑ Relaxed' : '↓ Tightened'} by ${Math.abs(diff).toFixed(3)} ns
+                                    </td>
+                                `;
+                                tbody.appendChild(impactRow);
+                            }
+                        }
+                        if (hasAdjustedBtoAHold) {
+                            const row = createTimingRow('Hold (Adjusted)', adjustedBtoA.hold[0], 'var(--accent-magenta)');
+                            tbody.appendChild(row);
+                            
+                            // Show hold impact
+                            if (hasDerivedBtoAHold) {
+                                const diff = adjustedBtoA.hold[0].window - derivedBtoA.hold[0].window;
+                                const relaxed = diff > 0;
+                                const impactRow = document.createElement('tr');
+                                impactRow.innerHTML = `
+                                    <td colspan="5" style="padding: 2px 16px 4px 32px; font-size: 10px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                        Hold: ${relaxed ? '↑ Relaxed' : '↓ Tightened'} by ${Math.abs(diff).toFixed(3)} ns
+                                    </td>
+                                `;
+                                tbody.appendChild(impactRow);
+                            }
                         }
                     }
                 }
@@ -2569,42 +2707,53 @@
                 // ========================================
                 // CDC Summary
                 // ========================================
-                if ((hasDerivedAtoB || hasAdjustedAtoB) && (hasDerivedBtoA || hasAdjustedBtoA)) {
+                const hasAtoB = hasDerivedAtoBSetup || hasAdjustedAtoBSetup;
+                const hasBtoA = hasDerivedBtoASetup || hasAdjustedBtoASetup;
+                
+                if (hasAtoB && hasBtoA) {
                     const summaryRow = document.createElement('tr');
                     
-                    // Use adjusted if available, otherwise derived
-                    const aToBWindow = (hasExceptionsAB && hasAdjustedAtoB) ? adjustedAtoB[0].window : (hasDerivedAtoB ? derivedAtoB[0].window : 0);
-                    const bToAWindow = (hasExceptionsBA && hasAdjustedBtoA) ? adjustedBtoA[0].window : (hasDerivedBtoA ? derivedBtoA[0].window : 0);
-                    const roundTrip = aToBWindow + bToAWindow;
+                    // Use adjusted setup if available, otherwise derived setup
+                    const aToBSetupWindow = (hasExceptionsAB && hasAdjustedAtoBSetup) 
+                        ? adjustedAtoB.setup[0].window 
+                        : (hasDerivedAtoBSetup ? derivedAtoB.setup[0].window : 0);
+                    const bToASetupWindow = (hasExceptionsBA && hasAdjustedBtoASetup) 
+                        ? adjustedBtoA.setup[0].window 
+                        : (hasDerivedBtoASetup ? derivedBtoA.setup[0].window : 0);
+                    const setupRoundTrip = aToBSetupWindow + bToASetupWindow;
 
-                    // Also show derived round trip for comparison
-                    const derivedRoundTrip = (hasDerivedAtoB ? derivedAtoB[0].window : 0) + (hasDerivedBtoA ? derivedBtoA[0].window : 0);
+                    // Hold windows
+                    const aToBHoldWindow = (hasExceptionsAB && hasAdjustedAtoBHold) 
+                        ? adjustedAtoB.hold[0].window 
+                        : (hasDerivedAtoBHold ? derivedAtoB.hold[0].window : 0);
+                    const bToAHoldWindow = (hasExceptionsBA && hasAdjustedBtoAHold) 
+                        ? adjustedBtoA.hold[0].window 
+                        : (hasDerivedBtoAHold ? derivedBtoA.hold[0].window : 0);
+
                     const hasAdjustments = hasExceptionsAB || hasExceptionsBA;
                     
                     let summaryContent = `
-                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <span style="color: var(--text-secondary);">CDC Handshake Summary</span>
-                                <span style="color: var(--accent-yellow);">
-                                    ${hasAdjustments ? 'Effective ' : ''}Round-Trip: <strong>${roundTrip.toFixed(3)} ns</strong>
-                                </span>
+                                <span style="color: var(--text-secondary); font-weight: 600;">CDC Timing Summary</span>
                             </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 11px;">
+                                <div style="padding: 8px; background: rgba(127, 217, 98, 0.1); border-radius: 4px;">
+                                    <div style="color: #7fd962; font-weight: 500; margin-bottom: 4px;">▶ ${clockAName} → ${clockBName}</div>
+                                    <div>Setup: <strong>${aToBSetupWindow.toFixed(3)} ns</strong></div>
+                                    <div>Hold: <strong>${aToBHoldWindow.toFixed(3)} ns</strong></div>
+                                </div>
+                                <div style="padding: 8px; background: rgba(89, 194, 255, 0.1); border-radius: 4px;">
+                                    <div style="color: #59c2ff; font-weight: 500; margin-bottom: 4px;">◀ ${clockBName} → ${clockAName}</div>
+                                    <div>Setup: <strong>${bToASetupWindow.toFixed(3)} ns</strong></div>
+                                    <div>Hold: <strong>${bToAHoldWindow.toFixed(3)} ns</strong></div>
+                                </div>
+                            </div>
+                            <div style="text-align: center; color: var(--accent-yellow); padding-top: 4px; border-top: 1px solid var(--border-color);">
+                                ${hasAdjustments ? 'Effective ' : ''}Setup Round-Trip: <strong>${setupRoundTrip.toFixed(3)} ns</strong>
+                            </div>
+                        </div>
                     `;
-                    
-                    if (hasAdjustments && Math.abs(roundTrip - derivedRoundTrip) > 0.001) {
-                        const diff = roundTrip - derivedRoundTrip;
-                        const relaxed = diff > 0;
-                        summaryContent += `
-                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
-                                <span style="color: var(--text-muted);">Derived Round-Trip: ${derivedRoundTrip.toFixed(3)} ns</span>
-                                <span style="color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
-                                    ${relaxed ? '↑ +' : '↓ '}${diff.toFixed(3)} ns from exceptions
-                                </span>
-                            </div>
-                        `;
-                    }
-                    
-                    summaryContent += '</div>';
                     
                     summaryRow.innerHTML = `
                         <td colspan="5" style="background: var(--bg-tertiary); padding: 12px 16px;">
@@ -2811,9 +2960,17 @@
                 const card = document.createElement('div');
                 card.className = 'clock-card';
                 
-                const badge = clock.type === 'generated' 
-                    ? '<span class="clock-card-badge generated">Generated</span>'
-                    : '<span class="clock-card-badge">Base</span>';
+                // Determine badge based on clock type
+                let badge;
+                if (clock.type === 'generated') {
+                    badge = '<span class="clock-card-badge generated">Generated</span>';
+                } else if (clock.targetType === 'virtual') {
+                    badge = '<span class="clock-card-badge virtual">Virtual</span>';
+                } else if (clock.targetType === 'bare') {
+                    badge = '<span class="clock-card-badge bare">Base (bare)</span>';
+                } else {
+                    badge = '<span class="clock-card-badge base">Base</span>';
+                }
 
                 let properties = `
                     <div class="clock-property">
@@ -2834,12 +2991,32 @@
                     </div>
                 `;
 
-                // Show target node for base clocks
-                if (clock.type === 'base' && clock.targetNode) {
+                // Show target node for base clocks with physical nodes (port, pin, etc.)
+                if (clock.type === 'base' && clock.targetNode && clock.targetType !== 'virtual' && clock.targetType !== 'bare') {
                     properties += `
                         <div class="clock-property">
                             <span class="clock-property-label">Target (${clock.targetType})</span>
                             <span class="clock-property-value" style="font-size: 11px;">${clock.targetNode}</span>
+                        </div>
+                    `;
+                }
+                
+                // Show target for bare node clocks
+                if (clock.type === 'base' && clock.targetType === 'bare') {
+                    properties += `
+                        <div class="clock-property">
+                            <span class="clock-property-label">Target (bare ref)</span>
+                            <span class="clock-property-value" style="font-size: 11px;">${clock.targetNode}</span>
+                        </div>
+                    `;
+                }
+                
+                // Show source for virtual clocks
+                if (clock.type === 'base' && clock.targetType === 'virtual') {
+                    properties += `
+                        <div class="clock-property">
+                            <span class="clock-property-label">Reference</span>
+                            <span class="clock-property-value" style="font-size: 11px; color: var(--accent-orange);">${clock.source} (no node)</span>
                         </div>
                     `;
                 }
@@ -3109,17 +3286,14 @@
             const example = `# Example SDC Clock Constraints
 # ============================================
 
-# System clock at 100 MHz (with explicit -name)
+# System clock at 100 MHz
 create_clock -name clk_sys -period 10.0 -waveform {0 5} [get_ports clk_in]
 
-# PLL output clock at 200 MHz (with explicit -name)
+# PLL output clock at 200 MHz
 create_clock -name clk_pll -period 5.0 [get_ports pll_clk]
 
-# Slower peripheral clock at 33 MHz (without -name, auto-named from port)
-create_clock -period 30.0 [get_ports periph_clk_in]
-
-# Another clock without -name, from a pin
-create_clock -period 8.0 [get_pins pll_inst/clk_out]
+# Slower peripheral clock at 33 MHz
+create_clock -name clk_periph -period 30.0 [get_ports periph_clk_in]
 
 # ============================================
 # Generated Clocks
@@ -3140,7 +3314,7 @@ create_generated_clock -name clk_div4_90 \\
     -phase 90 \\
     [get_pins clk_gen/clk_out]
 
-# Clock derived from PLL using -master_clock
+# Clock derived from PLL
 create_generated_clock -name clk_pll_div2 \\
     -source [get_ports pll_clk] \\
     -master_clock clk_pll \\
@@ -3151,23 +3325,23 @@ create_generated_clock -name clk_pll_div2 \\
 # Multicycle Path Constraints
 # ============================================
 
-# CDC path from clk_sys to periph_clk_in needs 2 cycles for setup
+# CDC path from clk_sys to clk_periph needs 2 cycles for setup
 set_multicycle_path 2 -setup -end \\
     -from [get_clocks clk_sys] \\
-    -to [get_clocks periph_clk_in]
+    -to [get_clocks clk_periph]
 
 # Corresponding hold adjustment (setup - 1)
 set_multicycle_path 1 -hold -start \\
     -from [get_clocks clk_sys] \\
-    -to [get_clocks periph_clk_in]
+    -to [get_clocks clk_periph]
 
-# Return path from periph_clk_in to clk_sys
+# Return path from clk_periph to clk_sys
 set_multicycle_path 3 -setup -end \\
-    -from [get_clocks periph_clk_in] \\
+    -from [get_clocks clk_periph] \\
     -to [get_clocks clk_sys]
 
 set_multicycle_path 2 -hold -start \\
-    -from [get_clocks periph_clk_in] \\
+    -from [get_clocks clk_periph] \\
     -to [get_clocks clk_sys]
 
 # ============================================
@@ -3195,6 +3369,7 @@ set_min_delay 0.5 \\
     -to [get_clocks clk_sys]`;
 
             document.getElementById('sdcEditor').value = example;
+            updateLoadedFilesDisplay([]);
             parseAndDraw();
         }
 
