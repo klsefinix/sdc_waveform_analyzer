@@ -1,0 +1,3371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDC Clock Waveform Analyzer</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e14;
+            --bg-secondary: #111820;
+            --bg-tertiary: #1a2230;
+            --bg-panel: #0d1219;
+            --text-primary: #e6e6e6;
+            --text-secondary: #8b9eb0;
+            --text-muted: #5c6f82;
+            --accent-blue: #39bae6;
+            --accent-cyan: #59c2ff;
+            --accent-green: #7fd962;
+            --accent-yellow: #ffb454;
+            --accent-orange: #ff8f40;
+            --accent-red: #f07178;
+            --accent-magenta: #d2a6ff;
+            --border-color: #1f2d3d;
+            --grid-color: #1a2530;
+            --waveform-rise: #39bae6;
+            --waveform-fall: #39bae6;
+            --launch-edge: #7fd962;
+            --latch-edge: #ff8f40;
+            --setup-region: rgba(240, 113, 120, 0.15);
+            --hold-region: rgba(127, 217, 98, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            grid-template-rows: auto 1fr;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon svg {
+            width: 22px;
+            height: 22px;
+            stroke: var(--bg-primary);
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-text span {
+            color: var(--accent-cyan);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover {
+            background: var(--bg-panel);
+            border-color: var(--accent-blue);
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+
+        .btn-primary.synced {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            color: var(--bg-primary);
+        }
+
+        .btn-primary.synced:hover {
+            background: #8fe972;
+            border-color: #8fe972;
+        }
+
+        .btn-primary.out-of-sync {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: var(--bg-primary);
+            animation: pulse-attention 1.5s ease-in-out infinite;
+        }
+
+        .btn-primary.out-of-sync:hover {
+            background: #ff8a8a;
+            border-color: #ff8a8a;
+            animation: none;
+        }
+
+        @keyframes pulse-attention {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .sidebar-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-title {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .loaded-files-info {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: none;
+        }
+
+        .loaded-files-info.visible {
+            display: block;
+        }
+
+        .loaded-files-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .loaded-file-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            color: var(--accent-cyan);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .editor-wrapper.drag-over {
+            background: rgba(57, 186, 230, 0.1);
+            border: 2px dashed var(--accent-cyan);
+        }
+
+        .drag-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(57, 186, 230, 0.15);
+            border: 2px dashed var(--accent-cyan);
+            z-index: 10;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .drag-overlay.visible {
+            display: flex;
+        }
+
+        .drag-overlay-content {
+            text-align: center;
+            color: var(--accent-cyan);
+        }
+
+        .drag-overlay-content svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 12px;
+        }
+
+        .drag-overlay-content p {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .code-editor {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-panel);
+            border: none;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            padding: 16px;
+            resize: none;
+            outline: none;
+        }
+
+        .code-editor::placeholder {
+            color: var(--text-muted);
+        }
+
+        .editor-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .parse-status {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .parse-status.success {
+            color: var(--accent-green);
+        }
+
+        .parse-status.error {
+            color: var(--accent-red);
+        }
+
+        .parse-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            padding: 12px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toolbar-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .toolbar-input {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            padding: 6px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            width: 80px;
+            outline: none;
+        }
+
+        .toolbar-input:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .toolbar-input::placeholder {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .toolbar-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .mcp-toolbar {
+            background: var(--bg-tertiary);
+            border-top: 1px solid var(--border-color);
+            padding: 10px 20px;
+        }
+
+        .mcp-toolbar .toolbar-label {
+            font-size: 11px;
+        }
+
+        .toolbar-select {
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 13px;
+            padding: 6px 28px 6px 10px;
+            background: var(--bg-tertiary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b9eb0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+            outline: none;
+            appearance: none;
+        }
+
+        .toolbar-select:focus {
+            border-color: var(--accent-blue);
+        }
+
+        /* Waveform Viewer */
+        .waveform-viewer {
+            flex: 1;
+            padding: 20px;
+            overflow: auto;
+            background: 
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px),
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                var(--bg-primary);
+            background-size: 50px 50px;
+        }
+
+        .waveform-canvas-container {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            min-height: 400px;
+        }
+
+        .waveform-header {
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .waveform-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .waveform-info {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        #waveformCanvas {
+            display: block;
+            width: 100%;
+        }
+
+        /* Clock Info Panel */
+        .clock-info-panel {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .clock-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .clock-card-header {
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .clock-color-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        .clock-card-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .clock-card-badge {
+            margin-left: auto;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .clock-card-badge.generated {
+            background: rgba(210, 166, 255, 0.15);
+            color: var(--accent-magenta);
+        }
+
+        .clock-card-body {
+            padding: 16px;
+        }
+
+        .clock-property {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .clock-property:last-child {
+            border-bottom: none;
+        }
+
+        .clock-property-label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .clock-property-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--accent-cyan);
+        }
+
+        /* Timing Analysis Panel */
+        .timing-panel {
+            margin-top: 20px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .timing-panel-header {
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .timing-panel-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .timing-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .timing-table th,
+        .timing-table td {
+            padding: 10px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .timing-table th {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            background: var(--bg-secondary);
+        }
+
+        .timing-table td {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+
+        .timing-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .timing-table tr:hover td {
+            background: var(--bg-tertiary);
+        }
+
+        .timing-value {
+            color: var(--accent-cyan);
+        }
+
+        .timing-positive {
+            color: var(--accent-green);
+        }
+
+        .timing-negative {
+            color: var(--accent-red);
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .legend-marker {
+            width: 0;
+            height: 0;
+        }
+
+        .legend-marker.launch {
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 10px solid var(--launch-edge);
+        }
+
+        .legend-marker.latch {
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 10px solid var(--latch-edge);
+        }
+
+        .legend-marker.launch-reverse {
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 10px solid var(--accent-cyan);
+        }
+
+        .legend-marker.latch-reverse {
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 10px solid var(--accent-magenta);
+        }
+
+        /* Error display */
+        .error-message {
+            padding: 16px;
+            background: rgba(240, 113, 120, 0.1);
+            border: 1px solid var(--accent-red);
+            border-radius: 6px;
+            color: var(--accent-red);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            margin: 20px;
+        }
+
+        /* Empty state */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 300px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-text {
+            font-size: 13px;
+            max-width: 300px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .app-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <polyline points="12 17 18 11 12 5"></polyline>
+                    </svg>
+                </div>
+                <div class="logo-text">SDC <span>Waveform Analyzer</span></div>
+            </div>
+            <div class="header-actions">
+                <input type="file" id="sdcFileInput" multiple accept=".sdc,.tcl" style="display: none;" onchange="loadSDCFiles(event)">
+                <button class="btn" onclick="document.getElementById('sdcFileInput').click()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Load Files
+                </button>
+                <button class="btn" onclick="loadExample()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    Example
+                </button>
+                <button id="analyzeBtn" class="btn btn-primary" onclick="parseAndDraw()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Analyze
+                </button>
+            </div>
+        </header>
+
+        <!-- Sidebar with SDC Editor -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-header-row">
+                    <span class="sidebar-title">SDC Constraints</span>
+                </div>
+                <div id="loadedFilesInfo" class="loaded-files-info">
+                    <span>Loaded files (processed in order):</span>
+                    <div id="loadedFilesList" class="loaded-files-list"></div>
+                </div>
+            </div>
+            <div class="editor-container">
+                <div id="editorWrapper" class="editor-wrapper">
+                    <div id="dragOverlay" class="drag-overlay">
+                        <div class="drag-overlay-content">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p>Drop .sdc or .tcl files here</p>
+                        </div>
+                    </div>
+                    <textarea id="sdcEditor" class="code-editor" spellcheck="false" placeholder="# Enter SDC constraints here or drag & drop .sdc/.tcl files
+# 
+# Multiple files are processed in alphabetical order.
+# Use numeric prefixes to control order:
+#   01_clocks.sdc
+#   02_generated_clocks.sdc
+#   03_timing_exceptions.sdc
+#
+# Example:
+# create_clock -name clk_sys -period 10 [get_ports clk]
+# create_generated_clock -name clk_div2 -source [get_ports clk] -divide_by 2 [get_pins div/Q]"></textarea>
+                </div>
+                <div class="editor-footer">
+                    <span id="parseStatus" class="parse-status">
+                        <span class="parse-status-dot"></span>
+                        Ready
+                    </span>
+                    <button class="btn" onclick="clearEditor()">Clear</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Toolbar -->
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Time Scale</span>
+                    <input type="number" id="timeScale" class="toolbar-input" value="auto" min="1" max="500" placeholder="auto" style="width: 60px;">
+                    <span class="toolbar-hint">ns (auto)</span>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Cycles</span>
+                    <input type="number" id="numCycles" class="toolbar-input" value="auto" min="1" max="50" placeholder="auto" style="width: 60px;">
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Clock A</span>
+                    <select id="launchClock" class="toolbar-select">
+                        <option value="">-- Select --</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Clock B</span>
+                    <select id="latchClock" class="toolbar-select">
+                        <option value="">-- Select --</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Analysis</span>
+                    <select id="analysisType" class="toolbar-select">
+                        <option value="setup">Setup (Max)</option>
+                        <option value="hold">Hold (Min)</option>
+                        <option value="bidirectional" selected>Bidirectional CDC</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Multicycle Path Configuration -->
+            <div class="toolbar mcp-toolbar">
+                <div class="toolbar-group">
+                    <span class="toolbar-label" style="color: var(--accent-magenta);">Multicycle Paths</span>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">A→B Setup</span>
+                    <input type="number" id="mcpSetupAB" class="toolbar-input" value="1" min="1" max="20" style="width: 50px;">
+                    <select id="mcpSetupABRef" class="toolbar-select" style="width: 70px;">
+                        <option value="end">-end</option>
+                        <option value="start">-start</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">A→B Hold</span>
+                    <input type="number" id="mcpHoldAB" class="toolbar-input" value="0" min="0" max="20" style="width: 50px;">
+                    <select id="mcpHoldABRef" class="toolbar-select" style="width: 70px;">
+                        <option value="start">-start</option>
+                        <option value="end">-end</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">B→A Setup</span>
+                    <input type="number" id="mcpSetupBA" class="toolbar-input" value="1" min="1" max="20" style="width: 50px;">
+                    <select id="mcpSetupBARef" class="toolbar-select" style="width: 70px;">
+                        <option value="end">-end</option>
+                        <option value="start">-start</option>
+                    </select>
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">B→A Hold</span>
+                    <input type="number" id="mcpHoldBA" class="toolbar-input" value="0" min="0" max="20" style="width: 50px;">
+                    <select id="mcpHoldBARef" class="toolbar-select" style="width: 70px;">
+                        <option value="start">-start</option>
+                        <option value="end">-end</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Waveform Viewer -->
+            <div class="waveform-viewer">
+                <div class="waveform-canvas-container">
+                    <div class="waveform-header">
+                        <span class="waveform-title">Clock Waveforms</span>
+                        <span id="waveformInfo" class="waveform-info"></span>
+                    </div>
+                    <canvas id="waveformCanvas"></canvas>
+                </div>
+
+                <!-- Legend -->
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-marker launch"></div>
+                        <span>Launch Edge (A→B)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-marker latch"></div>
+                        <span>Capture Edge (A→B)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-marker launch-reverse"></div>
+                        <span>Launch Edge (B→A)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-marker latch-reverse"></div>
+                        <span>Capture Edge (B→A)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: var(--accent-green);"></div>
+                        <span>Rising Edge</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: var(--accent-orange);"></div>
+                        <span>Falling Edge</span>
+                    </div>
+                </div>
+
+                <!-- Clock Info Cards -->
+                <div id="clockInfoPanel" class="clock-info-panel"></div>
+
+                <!-- Timing Analysis -->
+                <div id="timingPanel" class="timing-panel" style="display: none;">
+                    <div class="timing-panel-header">
+                        <span class="timing-panel-title">Edge Relationship Analysis</span>
+                    </div>
+                    <table class="timing-table">
+                        <thead>
+                            <tr>
+                                <th>Path Type</th>
+                                <th>Launch Edge</th>
+                                <th>Latch Edge</th>
+                                <th>Time Window</th>
+                                <th>Analysis</th>
+                            </tr>
+                        </thead>
+                        <tbody id="timingTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ============================================
+        // SDC Clock Waveform Analyzer
+        // ============================================
+
+        // Global state
+        let clocks = [];
+        let generatedClocks = [];
+        let allClocks = [];
+        let multicyclePaths = [];
+        let timingExceptions = []; // set_max_delay, set_min_delay
+        let lastAnalyzedContent = ''; // Track last analyzed content for sync detection
+
+        // Color palette for clocks
+        const clockColors = [
+            '#39bae6', '#7fd962', '#ffb454', '#d2a6ff', 
+            '#f07178', '#59c2ff', '#e6b450', '#95e6cb'
+        ];
+
+        // Minimum resolution threshold for worst-case edge detection
+        const MIN_EDGE_RESOLUTION = 0.001; // ns
+
+        // ============================================
+        // Auto Time Scale Calculator
+        // ============================================
+
+        class AutoTimeScaleCalculator {
+            constructor(clocks, minResolution = MIN_EDGE_RESOLUTION) {
+                this.clocks = clocks;
+                this.minResolution = minResolution;
+            }
+
+            // Calculate LCM of two numbers with precision handling
+            gcd(a, b) {
+                const precision = 1e9;
+                a = Math.round(a * precision);
+                b = Math.round(b * precision);
+                while (b !== 0) {
+                    const t = b;
+                    b = a % b;
+                    a = t;
+                }
+                return a / precision;
+            }
+
+            lcm(a, b) {
+                return (a * b) / this.gcd(a, b);
+            }
+
+            // Find the time scale needed to observe worst-case edge relationships
+            calculateOptimalTimeScale(clockA, clockB, mcpSettings) {
+                if (!clockA || !clockB) {
+                    return { timeScale: 50, numCycles: 4, reason: 'No clocks selected' };
+                }
+
+                const periodA = clockA.resolvedPeriod;
+                const periodB = clockB.resolvedPeriod;
+
+                // Calculate the LCM of both periods to find when edges realign
+                const lcmPeriod = this.lcm(periodA, periodB);
+
+                // Apply multicycle path adjustments
+                const setupMultAB = mcpSettings?.setupAB || 1;
+                const setupMultBA = mcpSettings?.setupBA || 1;
+                const maxSetupMult = Math.max(setupMultAB, setupMultBA);
+
+                // We need to see at least one full LCM period to capture worst-case
+                // Plus extra cycles for multicycle paths
+                let requiredTime = lcmPeriod * maxSetupMult;
+
+                // Cap at reasonable maximum (prevent infinite expansion)
+                const maxTime = Math.max(periodA, periodB) * 50;
+                requiredTime = Math.min(requiredTime, maxTime);
+
+                // Find minimum edge separation to determine if we need more resolution
+                const minEdgeSeparation = this.findMinimumEdgeSeparation(
+                    clockA, clockB, requiredTime, mcpSettings
+                );
+
+                // If minimum separation is already very small, we've found good resolution
+                // Otherwise, extend time to find smaller separations
+                if (minEdgeSeparation > this.minResolution) {
+                    // Need to find when edges get closer
+                    const extendedResult = this.extendUntilResolution(
+                        clockA, clockB, requiredTime, maxTime, mcpSettings
+                    );
+                    requiredTime = extendedResult.time;
+                }
+
+                // Calculate number of cycles based on larger period
+                const maxPeriod = Math.max(periodA, periodB);
+                const numCycles = Math.max(2, Math.ceil(requiredTime / maxPeriod));
+
+                return {
+                    timeScale: requiredTime,
+                    numCycles: numCycles,
+                    minEdgeSeparation: minEdgeSeparation,
+                    lcmPeriod: lcmPeriod,
+                    reason: `LCM: ${lcmPeriod.toFixed(3)}ns, Min sep: ${minEdgeSeparation.toFixed(4)}ns`
+                };
+            }
+
+            findMinimumEdgeSeparation(clockA, clockB, totalTime, mcpSettings) {
+                const edgesA = this.generateEdges(clockA, totalTime);
+                const edgesB = this.generateEdges(clockB, totalTime);
+
+                let minSeparation = Infinity;
+
+                // Check A→B setup relationship
+                const setupMultAB = mcpSettings?.setupAB || 1;
+                const setupRefAB = mcpSettings?.setupABRef || 'end';
+                
+                for (const launchEdge of edgesA.rise) {
+                    for (const captureEdge of edgesB.rise) {
+                        let effectiveLaunch = launchEdge;
+                        let effectiveCapture = captureEdge;
+
+                        // Apply multicycle adjustment
+                        if (setupRefAB === 'end') {
+                            // Move capture edge forward by (N-1) cycles of clock B
+                            effectiveCapture = captureEdge + (setupMultAB - 1) * clockB.resolvedPeriod;
+                        } else {
+                            // Move launch edge back by (N-1) cycles of clock A
+                            effectiveLaunch = launchEdge - (setupMultAB - 1) * clockA.resolvedPeriod;
+                        }
+
+                        const delta = effectiveCapture - effectiveLaunch;
+                        if (delta > 0 && delta < minSeparation) {
+                            minSeparation = delta;
+                        }
+                    }
+                }
+
+                // Check B→A setup relationship
+                const setupMultBA = mcpSettings?.setupBA || 1;
+                const setupRefBA = mcpSettings?.setupBARef || 'end';
+
+                for (const launchEdge of edgesB.rise) {
+                    for (const captureEdge of edgesA.rise) {
+                        let effectiveLaunch = launchEdge;
+                        let effectiveCapture = captureEdge;
+
+                        if (setupRefBA === 'end') {
+                            effectiveCapture = captureEdge + (setupMultBA - 1) * clockA.resolvedPeriod;
+                        } else {
+                            effectiveLaunch = launchEdge - (setupMultBA - 1) * clockB.resolvedPeriod;
+                        }
+
+                        const delta = effectiveCapture - effectiveLaunch;
+                        if (delta > 0 && delta < minSeparation) {
+                            minSeparation = delta;
+                        }
+                    }
+                }
+
+                return minSeparation === Infinity ? clockA.resolvedPeriod : minSeparation;
+            }
+
+            extendUntilResolution(clockA, clockB, startTime, maxTime, mcpSettings) {
+                let currentTime = startTime;
+                let prevMinSep = Infinity;
+                let diminishingCount = 0;
+                const maxDiminishing = 3; // Stop if no improvement for 3 iterations
+
+                while (currentTime < maxTime) {
+                    const minSep = this.findMinimumEdgeSeparation(clockA, clockB, currentTime, mcpSettings);
+
+                    // Check if we've reached target resolution
+                    if (minSep <= this.minResolution) {
+                        return { time: currentTime, minSep: minSep };
+                    }
+
+                    // Check for diminishing returns
+                    if (minSep >= prevMinSep * 0.99) {
+                        diminishingCount++;
+                        if (diminishingCount >= maxDiminishing) {
+                            return { time: currentTime, minSep: minSep, reason: 'diminishing' };
+                        }
+                    } else {
+                        diminishingCount = 0;
+                    }
+
+                    prevMinSep = minSep;
+
+                    // Extend by the larger period
+                    currentTime += Math.max(clockA.resolvedPeriod, clockB.resolvedPeriod);
+                }
+
+                return { time: maxTime, minSep: prevMinSep, reason: 'maxReached' };
+            }
+
+            generateEdges(clock, totalTime) {
+                const period = clock.resolvedPeriod;
+                const waveform = clock.resolvedWaveform;
+                const riseInPeriod = waveform.rise % period;
+                const fallInPeriod = waveform.fall % period;
+
+                const riseEdges = [];
+                const fallEdges = [];
+
+                for (let cycle = 0; cycle < Math.ceil(totalTime / period) + 1; cycle++) {
+                    const cycleStart = cycle * period;
+                    const riseTime = cycleStart + riseInPeriod;
+                    const fallTime = cycleStart + fallInPeriod;
+
+                    if (riseTime <= totalTime) riseEdges.push(riseTime);
+                    if (fallTime <= totalTime) fallEdges.push(fallTime);
+                }
+
+                return { rise: riseEdges, fall: fallEdges };
+            }
+        }
+
+        // ============================================
+        // SDC Parser
+        // ============================================
+
+        class SDCParser {
+            constructor(sdcText) {
+                this.sdcText = sdcText;
+                this.clocks = [];
+                this.generatedClocks = [];
+                this.multicyclePaths = [];
+                this.timingExceptions = []; // For set_max_delay, set_min_delay
+            }
+
+            parse() {
+                const lines = this.sdcText.split('\n');
+                let i = 0;
+                
+                while (i < lines.length) {
+                    let line = lines[i].trim();
+                    
+                    // Skip comments and empty lines
+                    if (line.startsWith('#') || line === '') {
+                        i++;
+                        continue;
+                    }
+                    
+                    // Handle line continuation
+                    while (line.endsWith('\\') && i + 1 < lines.length) {
+                        i++;
+                        line = line.slice(0, -1) + ' ' + lines[i].trim();
+                    }
+                    
+                    if (line.startsWith('create_clock')) {
+                        this.parseCreateClock(line);
+                    } else if (line.startsWith('create_generated_clock')) {
+                        this.parseGeneratedClock(line);
+                    } else if (line.startsWith('set_multicycle_path')) {
+                        this.parseMulticyclePath(line);
+                    } else if (line.startsWith('set_max_delay')) {
+                        this.parseTimingException(line, 'max_delay');
+                    } else if (line.startsWith('set_min_delay')) {
+                        this.parseTimingException(line, 'min_delay');
+                    }
+                    
+                    i++;
+                }
+
+                return {
+                    clocks: this.clocks,
+                    generatedClocks: this.generatedClocks,
+                    multicyclePaths: this.multicyclePaths,
+                    timingExceptions: this.timingExceptions
+                };
+            }
+
+            parseTimingException(line, type) {
+                const exception = {
+                    type: type, // 'max_delay' or 'min_delay'
+                    value: 0,
+                    fromClock: null,
+                    toClock: null,
+                    fromPin: null,
+                    toPin: null,
+                    combinational: false // -combinational flag
+                };
+
+                // Parse delay value (first number after command)
+                const valueMatch = line.match(/set_(?:max|min)_delay\s+([\d.]+)/);
+                if (valueMatch) {
+                    exception.value = parseFloat(valueMatch[1]);
+                }
+
+                // Parse -combinational flag
+                if (line.includes('-combinational')) {
+                    exception.combinational = true;
+                }
+
+                // Parse -from (clock or pin)
+                const fromClockMatch = line.match(/-from\s+\[get_clocks\s+([^\]]+)\]/);
+                if (fromClockMatch) {
+                    exception.fromClock = fromClockMatch[1].trim().replace(/[{}]/g, '');
+                } else {
+                    const fromPinMatch = line.match(/-from\s+\[get_(pins|ports|cells|registers)\s+([^\]]+)\]/);
+                    if (fromPinMatch) exception.fromPin = fromPinMatch[2].trim().replace(/[{}]/g, '');
+                }
+
+                // Parse -to (clock or pin)
+                const toClockMatch = line.match(/-to\s+\[get_clocks\s+([^\]]+)\]/);
+                if (toClockMatch) {
+                    exception.toClock = toClockMatch[1].trim().replace(/[{}]/g, '');
+                } else {
+                    const toPinMatch = line.match(/-to\s+\[get_(pins|ports|cells|registers)\s+([^\]]+)\]/);
+                    if (toPinMatch) exception.toPin = toPinMatch[2].trim().replace(/[{}]/g, '');
+                }
+
+                this.timingExceptions.push(exception);
+            }
+
+            parseMulticyclePath(line) {
+                const mcp = {
+                    value: 1,
+                    type: 'setup', // 'setup' or 'hold'
+                    reference: 'end', // 'start' or 'end'
+                    fromClock: null,
+                    toClock: null,
+                    fromPin: null,
+                    toPin: null
+                };
+
+                // Parse path multiplier value (required, first positional or after flags)
+                const valueMatch = line.match(/set_multicycle_path\s+(?:-\w+\s+(?:\[get_\w+\s+[^\]]+\]|\w+)\s+)*(\d+)/);
+                if (!valueMatch) {
+                    // Try alternate pattern where value comes early
+                    const altValueMatch = line.match(/set_multicycle_path\s+(\d+)/);
+                    if (altValueMatch) mcp.value = parseInt(altValueMatch[1]);
+                } else {
+                    mcp.value = parseInt(valueMatch[1]);
+                }
+
+                // Parse -setup or -hold
+                if (line.includes('-setup')) {
+                    mcp.type = 'setup';
+                } else if (line.includes('-hold')) {
+                    mcp.type = 'hold';
+                }
+
+                // Parse -start or -end
+                if (line.includes('-start')) {
+                    mcp.reference = 'start';
+                } else if (line.includes('-end')) {
+                    mcp.reference = 'end';
+                }
+
+                // Parse -from (clock or pin)
+                const fromClockMatch = line.match(/-from\s+\[get_clocks\s+([^\]]+)\]/);
+                if (fromClockMatch) {
+                    mcp.fromClock = fromClockMatch[1].trim();
+                } else {
+                    const fromPinMatch = line.match(/-from\s+\[get_(pins|ports|registers)\s+([^\]]+)\]/);
+                    if (fromPinMatch) mcp.fromPin = fromPinMatch[2].trim();
+                }
+
+                // Parse -to (clock or pin)
+                const toClockMatch = line.match(/-to\s+\[get_clocks\s+([^\]]+)\]/);
+                if (toClockMatch) {
+                    mcp.toClock = toClockMatch[1].trim();
+                } else {
+                    const toPinMatch = line.match(/-to\s+\[get_(pins|ports|registers)\s+([^\]]+)\]/);
+                    if (toPinMatch) mcp.toPin = toPinMatch[2].trim();
+                }
+
+                this.multicyclePaths.push(mcp);
+            }
+
+            parseCreateClock(line) {
+                const clock = {
+                    type: 'base',
+                    name: '',
+                    period: 10,
+                    waveform: null,
+                    frequency: null,
+                    source: '',
+                    targetType: '', // 'port', 'pin', 'net', or 'register'
+                    targetNode: ''
+                };
+
+                // Parse -name (optional)
+                const nameMatch = line.match(/-name\s+(\S+)/);
+                if (nameMatch) clock.name = nameMatch[1];
+
+                // Parse -period (in ns or frequency in MHz)
+                const periodMatch = line.match(/-period\s+([\d.]+)/);
+                if (periodMatch) clock.period = parseFloat(periodMatch[1]);
+
+                // Parse -waveform {rise fall}
+                const waveformMatch = line.match(/-waveform\s*\{([^}]+)\}/);
+                if (waveformMatch) {
+                    const values = waveformMatch[1].trim().split(/\s+/).map(parseFloat);
+                    clock.waveform = { rise: values[0] || 0, fall: values[1] || clock.period / 2 };
+                } else {
+                    // Default 50% duty cycle
+                    clock.waveform = { rise: 0, fall: clock.period / 2 };
+                }
+
+                clock.frequency = 1000 / clock.period; // MHz
+
+                // Parse target node (get_ports, get_pins, get_nets, or get_registers)
+                const targetMatch = line.match(/\[get_(ports|pins|nets|registers)\s+([^\]]+)\]/);
+                if (targetMatch) {
+                    clock.targetType = targetMatch[1];
+                    clock.targetNode = targetMatch[2].trim().replace(/[{}]/g, '');
+                    clock.source = clock.targetNode;
+                }
+
+                // Generate name from target node if -name not provided
+                if (!clock.name) {
+                    if (clock.targetNode) {
+                        // Clean up the target node name to create a valid clock name
+                        // Remove wildcards, special chars, and create a readable name
+                        let cleanName = clock.targetNode
+                            .replace(/\*/g, '')
+                            .replace(/[^a-zA-Z0-9_\/]/g, '_')
+                            .replace(/\/+/g, '_')
+                            .replace(/_+/g, '_')
+                            .replace(/^_|_$/g, '');
+                        
+                        // If it's a hierarchical path, use the last segment
+                        if (cleanName.includes('_')) {
+                            const parts = cleanName.split('_').filter(p => p.length > 0);
+                            if (parts.length > 1) {
+                                cleanName = parts[parts.length - 1];
+                            }
+                        }
+                        
+                        clock.name = cleanName || `clk_${this.clocks.length}`;
+                    } else {
+                        clock.name = `clk_${this.clocks.length}`;
+                    }
+                }
+
+                this.clocks.push(clock);
+            }
+
+            parseGeneratedClock(line) {
+                const genClk = {
+                    type: 'generated',
+                    name: '',
+                    source: '',
+                    masterClock: '',
+                    masterClockName: '', // Explicit -master_clock reference
+                    divideBy: 1,
+                    multiplyBy: 1,
+                    dutyCycle: 50,
+                    edges: null,
+                    edgeShift: null,
+                    phase: 0,
+                    invert: false
+                };
+
+                // Parse -name
+                const nameMatch = line.match(/-name\s+(\S+)/);
+                if (nameMatch) genClk.name = nameMatch[1];
+
+                // Parse -source (the physical pin/port)
+                const sourceMatch = line.match(/-source\s+\[get_(ports|pins)\s+([^\]]+)\]/);
+                if (sourceMatch) genClk.masterClock = sourceMatch[2].trim();
+
+                // Parse -master_clock (explicit reference to a defined clock name)
+                // This takes precedence over -source for clock relationship
+                const masterClockMatch = line.match(/-master_clock\s+(\S+)/);
+                if (masterClockMatch) {
+                    genClk.masterClockName = masterClockMatch[1].trim();
+                }
+
+                // Parse -divide_by
+                const divMatch = line.match(/-divide_by\s+(\d+)/);
+                if (divMatch) genClk.divideBy = parseInt(divMatch[1]);
+
+                // Parse -multiply_by
+                const multMatch = line.match(/-multiply_by\s+(\d+)/);
+                if (multMatch) genClk.multiplyBy = parseInt(multMatch[1]);
+
+                // Parse -duty_cycle
+                const dutyMatch = line.match(/-duty_cycle\s+([\d.]+)/);
+                if (dutyMatch) genClk.dutyCycle = parseFloat(dutyMatch[1]);
+
+                // Parse -edges {e1 e2 e3}
+                const edgesMatch = line.match(/-edges\s*\{([^}]+)\}/);
+                if (edgesMatch) {
+                    genClk.edges = edgesMatch[1].trim().split(/\s+/).map(e => parseInt(e));
+                }
+
+                // Parse -edge_shift {s1 s2 s3}
+                const shiftMatch = line.match(/-edge_shift\s*\{([^}]+)\}/);
+                if (shiftMatch) {
+                    genClk.edgeShift = shiftMatch[1].trim().split(/\s+/).map(s => parseFloat(s));
+                }
+
+                // Parse -invert
+                if (line.includes('-invert')) {
+                    genClk.invert = true;
+                }
+
+                // Parse -phase
+                const phaseMatch = line.match(/-phase\s+([\d.]+)/);
+                if (phaseMatch) genClk.phase = parseFloat(phaseMatch[1]);
+
+                // Parse output target
+                const targetMatch = line.match(/\[get_(ports|pins|registers)\s+([^\]]+)\]\s*$/);
+                if (targetMatch) genClk.source = targetMatch[2].trim();
+
+                // Generate name if not provided
+                if (!genClk.name) genClk.name = `gen_clk_${this.generatedClocks.length}`;
+
+                this.generatedClocks.push(genClk);
+            }
+        }
+
+        // ============================================
+        // Clock Calculator
+        // ============================================
+
+        class ClockCalculator {
+            constructor(baseClocks, generatedClocks) {
+                this.baseClocks = baseClocks;
+                this.generatedClocks = generatedClocks;
+                this.resolvedClocks = new Map();
+            }
+
+            resolveAll() {
+                // First resolve base clocks
+                for (const clk of this.baseClocks) {
+                    this.resolvedClocks.set(clk.name, {
+                        ...clk,
+                        resolvedPeriod: clk.period,
+                        resolvedWaveform: clk.waveform,
+                        riseEdges: [],
+                        fallEdges: []
+                    });
+                }
+
+                // Then resolve generated clocks
+                for (const genClk of this.generatedClocks) {
+                    this.resolveGeneratedClock(genClk);
+                }
+
+                return Array.from(this.resolvedClocks.values());
+            }
+
+            findMasterClock(genClk) {
+                // Priority 1: Explicit -master_clock name reference
+                if (genClk.masterClockName) {
+                    const byName = this.resolvedClocks.get(genClk.masterClockName);
+                    if (byName) return byName;
+                    
+                    // Try to find by name in base clocks (might not be resolved yet)
+                    for (const clk of this.baseClocks) {
+                        if (clk.name === genClk.masterClockName) {
+                            return this.resolvedClocks.get(clk.name);
+                        }
+                    }
+                }
+
+                const sourceName = genClk.masterClock;
+                
+                // Priority 2: Check base clocks by source pin/port
+                for (const clk of this.baseClocks) {
+                    if (clk.source === sourceName || clk.name === sourceName) {
+                        return this.resolvedClocks.get(clk.name);
+                    }
+                }
+                
+                // Priority 3: Check resolved generated clocks
+                for (const [name, clk] of this.resolvedClocks) {
+                    if (clk.source === sourceName || name === sourceName) {
+                        return clk;
+                    }
+                }
+                
+                // Priority 4: Fallback - try to find by partial match
+                for (const clk of this.baseClocks) {
+                    if (sourceName && (sourceName.includes(clk.name) || clk.name.includes(sourceName))) {
+                        return this.resolvedClocks.get(clk.name);
+                    }
+                }
+
+                return null;
+            }
+
+            resolveGeneratedClock(genClk) {
+                const master = this.findMasterClock(genClk);
+                
+                if (!master) {
+                    const searchedFor = genClk.masterClockName || genClk.masterClock;
+                    console.warn(`Master clock not found for ${genClk.name}: ${searchedFor}`);
+                    // Use first base clock as fallback
+                    if (this.baseClocks.length > 0) {
+                        const fallback = this.resolvedClocks.get(this.baseClocks[0].name);
+                        return this.calculateGeneratedWaveform(genClk, fallback);
+                    }
+                    return null;
+                }
+
+                return this.calculateGeneratedWaveform(genClk, master);
+            }
+
+            calculateGeneratedWaveform(genClk, master) {
+                let period, waveform;
+
+                if (genClk.edges && genClk.edges.length >= 3) {
+                    // Edge-based generation
+                    const e = genClk.edges;
+                    const shifts = genClk.edgeShift || [0, 0, 0];
+                    
+                    // Calculate edges based on master clock edges
+                    const masterHalfPeriod = master.resolvedPeriod / 2;
+                    
+                    const rise1 = (e[0] - 1) * masterHalfPeriod + shifts[0];
+                    const fall = (e[1] - 1) * masterHalfPeriod + shifts[1];
+                    const rise2 = (e[2] - 1) * masterHalfPeriod + shifts[2];
+                    
+                    period = rise2 - rise1;
+                    waveform = { rise: rise1 % period, fall: (fall - rise1) };
+                } else {
+                    // Divide/multiply based generation
+                    period = (master.resolvedPeriod * genClk.divideBy) / genClk.multiplyBy;
+                    
+                    // Apply phase shift
+                    const phaseShift = (genClk.phase / 360) * period;
+                    
+                    // Apply duty cycle
+                    const highTime = period * (genClk.dutyCycle / 100);
+                    
+                    if (genClk.invert) {
+                        waveform = { rise: phaseShift + highTime, fall: phaseShift };
+                    } else {
+                        waveform = { rise: phaseShift, fall: phaseShift + highTime };
+                    }
+                    
+                    // Normalize waveform
+                    waveform.rise = waveform.rise % period;
+                    waveform.fall = waveform.fall % period;
+                    if (waveform.fall < waveform.rise) {
+                        waveform.fall += period;
+                    }
+                }
+
+                const resolved = {
+                    ...genClk,
+                    resolvedPeriod: period,
+                    resolvedWaveform: waveform,
+                    masterClockName: master.name,
+                    frequency: 1000 / period,
+                    riseEdges: [],
+                    fallEdges: []
+                };
+
+                this.resolvedClocks.set(genClk.name, resolved);
+                return resolved;
+            }
+        }
+
+        // ============================================
+        // Waveform Renderer
+        // ============================================
+
+        class WaveformRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.config = {
+                    marginLeft: 150,
+                    marginRight: 40,
+                    marginTop: 40,
+                    marginBottom: 40,
+                    rowHeight: 80,
+                    waveformHeight: 40,
+                    labelWidth: 140,
+                    timeAxisHeight: 30
+                };
+            }
+
+            render(clocks, options) {
+                const { timeScale, numCycles, launchClock, latchClock, analysisType, mcpSettings, autoScaleInfo, timingExceptions } = options;
+                
+                // Filter to only show the two selected clocks
+                let displayClocks = clocks;
+                if (launchClock && latchClock) {
+                    if (launchClock === latchClock) {
+                        // Same clock selected for both - show just one
+                        displayClocks = clocks.filter(c => c.name === launchClock);
+                    } else {
+                        // Show both selected clocks in order (Clock A first, then Clock B)
+                        const clockA = clocks.find(c => c.name === launchClock);
+                        const clockB = clocks.find(c => c.name === latchClock);
+                        displayClocks = [clockA, clockB].filter(Boolean);
+                    }
+                } else if (launchClock) {
+                    displayClocks = clocks.filter(c => c.name === launchClock);
+                } else if (latchClock) {
+                    displayClocks = clocks.filter(c => c.name === latchClock);
+                }
+
+                // If no clocks selected yet, show first two
+                if (displayClocks.length === 0 && clocks.length > 0) {
+                    displayClocks = clocks.slice(0, 2);
+                }
+                
+                // Calculate dimensions
+                const numDisplayClocks = displayClocks.length;
+                const height = this.config.marginTop + 
+                              this.config.timeAxisHeight + 
+                              (numDisplayClocks * this.config.rowHeight) + 
+                              this.config.marginBottom;
+                
+                // Set canvas size
+                const container = this.canvas.parentElement;
+                const width = container.clientWidth;
+                this.canvas.width = width * window.devicePixelRatio;
+                this.canvas.height = height * window.devicePixelRatio;
+                this.canvas.style.width = width + 'px';
+                this.canvas.style.height = height + 'px';
+                this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+                // Calculate total time to display based on displayed clocks
+                const maxPeriod = displayClocks.length > 0 
+                    ? Math.max(...displayClocks.map(c => c.resolvedPeriod))
+                    : 10;
+                const totalTime = maxPeriod * numCycles;
+                
+                // Time to pixel conversion
+                const drawWidth = width - this.config.marginLeft - this.config.marginRight;
+                const timeToX = (t) => this.config.marginLeft + (t / totalTime) * drawWidth;
+                const xToTime = (x) => ((x - this.config.marginLeft) / drawWidth) * totalTime;
+
+                // Clear canvas
+                this.ctx.fillStyle = '#0d1219';
+                this.ctx.fillRect(0, 0, width, height);
+
+                // Draw time axis
+                this.drawTimeAxis(timeToX, totalTime, timeScale, width);
+
+                // Draw auto-scale info if available
+                if (autoScaleInfo) {
+                    this.drawAutoScaleInfo(autoScaleInfo, width);
+                }
+
+                // Store edges for each clock
+                const clockEdges = new Map();
+
+                // Draw each displayed clock waveform
+                displayClocks.forEach((clock, index) => {
+                    const yBase = this.config.marginTop + this.config.timeAxisHeight + 
+                                  (index * this.config.rowHeight) + this.config.rowHeight / 2;
+                    
+                    // Use consistent colors: Clock A = green-ish, Clock B = cyan-ish
+                    let color;
+                    if (clock.name === launchClock) {
+                        color = '#39bae6'; // Clock A - cyan/blue
+                    } else if (clock.name === latchClock) {
+                        color = '#7fd962'; // Clock B - green
+                    } else {
+                        color = clockColors[index % clockColors.length];
+                    }
+
+                    // Draw label with A/B indicator
+                    this.drawLabelWithIndicator(clock, yBase, color, 
+                        clock.name === launchClock ? 'A' : (clock.name === latchClock ? 'B' : null));
+
+                    // Draw waveform and collect edges
+                    const edges = this.drawWaveform(clock, yBase, timeToX, totalTime, color);
+                    clockEdges.set(clock.name, edges);
+                });
+
+                // Perform timing analysis
+                if (launchClock && latchClock) {
+                    const clockAEdges = clockEdges.get(launchClock);
+                    const clockBEdges = clockEdges.get(latchClock);
+                    const clockAData = clocks.find(c => c.name === launchClock);
+                    const clockBData = clocks.find(c => c.name === latchClock);
+
+                    if (clockAEdges && clockBEdges && clockAData && clockBData) {
+                        // Build MCP settings for each direction
+                        const mcpAtoB = {
+                            setup: mcpSettings?.setupAB || 1,
+                            setupRef: mcpSettings?.setupABRef || 'end',
+                            hold: mcpSettings?.holdAB || 0,
+                            holdRef: mcpSettings?.holdABRef || 'start'
+                        };
+                        const mcpBtoA = {
+                            setup: mcpSettings?.setupBA || 1,
+                            setupRef: mcpSettings?.setupBARef || 'end',
+                            hold: mcpSettings?.holdBA || 0,
+                            holdRef: mcpSettings?.holdBARef || 'start'
+                        };
+
+                        // Calculate DERIVED (natural) timing - no MCP applied
+                        const derivedAtoB = this.calculateTimingRelationship(
+                            clockAEdges.riseEdges, clockBEdges.riseEdges,
+                            clockAData, clockBData, 'setup', totalTime, { setup: 1, hold: 0 }
+                        );
+                        const derivedBtoA = this.calculateTimingRelationship(
+                            clockBEdges.riseEdges, clockAEdges.riseEdges,
+                            clockBData, clockAData, 'setup', totalTime, { setup: 1, hold: 0 }
+                        );
+
+                        if (analysisType === 'bidirectional') {
+                            // Bidirectional CDC analysis with MCP
+                            const aToBSetup = this.calculateTimingRelationship(
+                                clockAEdges.riseEdges, clockBEdges.riseEdges,
+                                clockAData, clockBData, 'setup', totalTime, mcpAtoB
+                            );
+                            const bToASetup = this.calculateTimingRelationship(
+                                clockBEdges.riseEdges, clockAEdges.riseEdges,
+                                clockBData, clockAData, 'setup', totalTime, mcpBtoA
+                            );
+
+                            this.drawBidirectionalTimingMarkers(
+                                aToBSetup, bToASetup, displayClocks,
+                                launchClock, latchClock, timeToX, mcpAtoB, mcpBtoA
+                            );
+
+                            this.updateBidirectionalTimingTable(
+                                derivedAtoB, derivedBtoA,
+                                aToBSetup, bToASetup,
+                                launchClock, latchClock, 
+                                mcpAtoB, mcpBtoA,
+                                timingExceptions
+                            );
+                        } else {
+                            // Single direction analysis (setup or hold) with MCP
+                            const timingResult = this.calculateTimingRelationship(
+                                clockAEdges.riseEdges, clockBEdges.riseEdges,
+                                clockAData, clockBData, analysisType, totalTime, mcpAtoB
+                            );
+
+                            this.drawTimingMarkers(
+                                timingResult, displayClocks,
+                                launchClock, latchClock,
+                                timeToX, mcpAtoB
+                            );
+
+                            this.updateTimingTable(
+                                derivedAtoB, timingResult, 
+                                launchClock, latchClock, 
+                                analysisType, mcpAtoB,
+                                timingExceptions?.aToB
+                            );
+                        }
+                    }
+                }
+
+                // Draw grid lines
+                this.drawGridLines(timeToX, totalTime, timeScale, height, width);
+            }
+
+            drawLabelWithIndicator(clock, yBase, color, indicator) {
+                // Clock indicator badge (A or B)
+                if (indicator) {
+                    const badgeColor = indicator === 'A' ? '#39bae6' : '#7fd962';
+                    this.ctx.fillStyle = badgeColor;
+                    this.ctx.font = '600 11px "IBM Plex Sans", sans-serif';
+                    this.ctx.textAlign = 'left';
+                    
+                    // Draw badge circle
+                    this.ctx.beginPath();
+                    this.ctx.arc(15, yBase, 10, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Draw letter
+                    this.ctx.fillStyle = '#0d1219';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(indicator, 15, yBase + 4);
+                }
+
+                // Clock name
+                this.ctx.fillStyle = color;
+                this.ctx.font = '600 13px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(clock.name, this.config.marginLeft - 20, yBase - 10);
+                
+                // Period info
+                this.ctx.fillStyle = '#5c6f82';
+                this.ctx.font = '11px "JetBrains Mono", monospace';
+                this.ctx.fillText(
+                    `${clock.resolvedPeriod.toFixed(2)} ns`, 
+                    this.config.marginLeft - 20, 
+                    yBase + 5
+                );
+                
+                // Type badge
+                if (clock.type === 'generated') {
+                    this.ctx.fillStyle = 'rgba(210, 166, 255, 0.3)';
+                    const badgeWidth = 45;
+                    const badgeHeight = 14;
+                    const badgeX = this.config.marginLeft - 20 - badgeWidth;
+                    const badgeY = yBase + 10;
+                    
+                    this.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 7);
+                    this.ctx.fill();
+                    
+                    this.ctx.fillStyle = '#d2a6ff';
+                    this.ctx.font = '9px "IBM Plex Sans", sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('GEN', badgeX + badgeWidth/2, badgeY + 10);
+                }
+
+                // Show target node if name was auto-generated
+                if (clock.targetNode && clock.targetType) {
+                    this.ctx.fillStyle = '#5c6f82';
+                    this.ctx.font = '9px "JetBrains Mono", monospace';
+                    this.ctx.textAlign = 'right';
+                    const targetText = `[${clock.targetType}] ${clock.targetNode}`;
+                    // Truncate if too long
+                    const maxLen = 25;
+                    const displayText = targetText.length > maxLen 
+                        ? targetText.substring(0, maxLen) + '...' 
+                        : targetText;
+                    this.ctx.fillText(displayText, this.config.marginLeft - 20, yBase + 18);
+                }
+            }
+
+            drawAutoScaleInfo(info, width) {
+                this.ctx.fillStyle = 'rgba(57, 186, 230, 0.1)';
+                this.ctx.fillRect(width - 280, 5, 270, 30);
+                
+                this.ctx.strokeStyle = 'rgba(57, 186, 230, 0.3)';
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(width - 280, 5, 270, 30);
+                
+                this.ctx.fillStyle = '#5c6f82';
+                this.ctx.font = '10px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(`Auto: ${info.reason}`, width - 20, 24);
+            }
+
+            drawTimeAxis(timeToX, totalTime, timeScale, width) {
+                const y = this.config.marginTop;
+                
+                // Draw axis line
+                this.ctx.strokeStyle = '#1f2d3d';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.config.marginLeft, y + 20);
+                this.ctx.lineTo(width - this.config.marginRight, y + 20);
+                this.ctx.stroke();
+
+                // Draw time markers
+                this.ctx.fillStyle = '#8b9eb0';
+                this.ctx.font = '11px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'center';
+
+                const interval = this.calculateNiceInterval(totalTime);
+                for (let t = 0; t <= totalTime; t += interval) {
+                    const x = timeToX(t);
+                    
+                    // Tick mark
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y + 16);
+                    this.ctx.lineTo(x, y + 24);
+                    this.ctx.stroke();
+                    
+                    // Label
+                    this.ctx.fillText(t.toFixed(1) + ' ns', x, y + 12);
+                }
+            }
+
+            calculateNiceInterval(totalTime) {
+                const targetTicks = 10;
+                const rawInterval = totalTime / targetTicks;
+                const magnitude = Math.pow(10, Math.floor(Math.log10(rawInterval)));
+                const normalized = rawInterval / magnitude;
+                
+                let niceNorm;
+                if (normalized <= 1) niceNorm = 1;
+                else if (normalized <= 2) niceNorm = 2;
+                else if (normalized <= 5) niceNorm = 5;
+                else niceNorm = 10;
+                
+                return niceNorm * magnitude;
+            }
+
+            drawWaveform(clock, yBase, timeToX, totalTime, color) {
+                const period = clock.resolvedPeriod;
+                const waveform = clock.resolvedWaveform;
+                const halfHeight = this.config.waveformHeight / 2;
+                
+                const riseEdges = [];
+                const fallEdges = [];
+                
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = 2;
+                this.ctx.lineCap = 'square';
+                this.ctx.lineJoin = 'miter';
+                
+                this.ctx.beginPath();
+                
+                // Start position
+                let currentTime = 0;
+                let isHigh = waveform.rise < waveform.fall ? false : true;
+                
+                // Determine initial state at t=0
+                const riseInPeriod = waveform.rise % period;
+                const fallInPeriod = waveform.fall % period;
+                
+                if (riseInPeriod < fallInPeriod) {
+                    isHigh = false; // Starts low, rises then falls
+                } else {
+                    isHigh = true; // Starts high
+                }
+                
+                let x = timeToX(0);
+                let y = yBase + (isHigh ? -halfHeight : halfHeight);
+                this.ctx.moveTo(x, y);
+                
+                // Generate edges
+                const edges = [];
+                for (let cycle = -1; cycle < Math.ceil(totalTime / period) + 1; cycle++) {
+                    const cycleStart = cycle * period;
+                    edges.push({ time: cycleStart + riseInPeriod, type: 'rise' });
+                    edges.push({ time: cycleStart + fallInPeriod, type: 'fall' });
+                }
+                
+                // Sort edges and filter to visible range
+                edges.sort((a, b) => a.time - b.time);
+                const visibleEdges = edges.filter(e => e.time >= 0 && e.time <= totalTime);
+                
+                // Draw waveform
+                for (const edge of visibleEdges) {
+                    const edgeX = timeToX(edge.time);
+                    const prevY = yBase + (edge.type === 'rise' ? halfHeight : -halfHeight);
+                    const nextY = yBase + (edge.type === 'rise' ? -halfHeight : halfHeight);
+                    
+                    // Horizontal line to edge
+                    this.ctx.lineTo(edgeX, prevY);
+                    // Vertical transition
+                    this.ctx.lineTo(edgeX, nextY);
+                    
+                    // Store edges
+                    if (edge.type === 'rise') {
+                        riseEdges.push(edge.time);
+                    } else {
+                        fallEdges.push(edge.time);
+                    }
+                }
+                
+                // Continue to end
+                const lastEdge = visibleEdges[visibleEdges.length - 1];
+                if (lastEdge) {
+                    const endY = yBase + (lastEdge.type === 'rise' ? -halfHeight : halfHeight);
+                    this.ctx.lineTo(timeToX(totalTime), endY);
+                }
+                
+                this.ctx.stroke();
+                
+                // Draw edge markers (small dots at transitions)
+                this.ctx.fillStyle = color;
+                for (const edge of visibleEdges) {
+                    const edgeX = timeToX(edge.time);
+                    this.ctx.beginPath();
+                    this.ctx.arc(edgeX, yBase, 3, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                return { riseEdges, fallEdges };
+            }
+
+            calculateTimingRelationship(launchEdges, latchEdges, launchClk, latchClk, analysisType, totalTime, mcpSettings = {}) {
+                if (launchEdges.length === 0 || latchEdges.length === 0) {
+                    return null;
+                }
+
+                const results = [];
+                
+                // Get multicycle path settings
+                const setupMult = mcpSettings.setup || 1;
+                const holdMult = mcpSettings.hold || 0;
+                const setupRef = mcpSettings.setupRef || 'end';
+                const holdRef = mcpSettings.holdRef || 'start';
+
+                for (const launch of launchEdges) {
+                    for (const latch of latchEdges) {
+                        let effectiveLaunch = launch;
+                        let effectiveLatch = latch;
+
+                        if (analysisType === 'setup') {
+                            // Setup analysis with multicycle path
+                            if (setupRef === 'end') {
+                                // -end: Move capture edge forward by (N-1) cycles of latch clock
+                                effectiveLatch = latch + (setupMult - 1) * latchClk.resolvedPeriod;
+                            } else {
+                                // -start: Move launch edge back by (N-1) cycles of launch clock
+                                effectiveLaunch = launch - (setupMult - 1) * launchClk.resolvedPeriod;
+                            }
+
+                            const delta = effectiveLatch - effectiveLaunch;
+                            
+                            // Setup: latch must be after launch (positive delta)
+                            if (delta > 0.0001 && delta < totalTime * 0.95) {
+                                results.push({
+                                    launchTime: launch,
+                                    latchTime: latch,
+                                    effectiveLaunch: effectiveLaunch,
+                                    effectiveLatch: effectiveLatch,
+                                    window: delta,
+                                    type: 'setup',
+                                    mcpApplied: setupMult > 1,
+                                    mcpValue: setupMult,
+                                    mcpRef: setupRef
+                                });
+                            }
+                        } else {
+                            // Hold analysis with multicycle path
+                            if (holdRef === 'start') {
+                                // -start: Move launch edge forward by N cycles of launch clock
+                                effectiveLaunch = launch + holdMult * launchClk.resolvedPeriod;
+                            } else {
+                                // -end: Move capture edge back by N cycles of latch clock
+                                effectiveLatch = latch - holdMult * latchClk.resolvedPeriod;
+                            }
+
+                            const delta = effectiveLatch - effectiveLaunch;
+                            
+                            // Hold: check relationship at or just after launch
+                            if (delta >= -0.0001 && delta < latchClk.resolvedPeriod) {
+                                results.push({
+                                    launchTime: launch,
+                                    latchTime: latch,
+                                    effectiveLaunch: effectiveLaunch,
+                                    effectiveLatch: effectiveLatch,
+                                    window: delta,
+                                    type: 'hold',
+                                    mcpApplied: holdMult > 0,
+                                    mcpValue: holdMult,
+                                    mcpRef: holdRef
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Sort by window (smallest = worst case)
+                results.sort((a, b) => a.window - b.window);
+
+                // Remove duplicates with very similar windows (within 0.001ns)
+                const filtered = [];
+                for (const r of results) {
+                    const isDuplicate = filtered.some(f => 
+                        Math.abs(f.window - r.window) < 0.001 &&
+                        Math.abs(f.launchTime - r.launchTime) < 0.001
+                    );
+                    if (!isDuplicate) {
+                        filtered.push(r);
+                    }
+                }
+
+                // Return top results (limited)
+                return filtered.slice(0, 8);
+            }
+
+            drawTimingMarkers(timingResults, clocks, launchClockName, latchClockName, timeToX, mcpSettings = {}) {
+                if (!timingResults || timingResults.length === 0) return;
+
+                const launchIdx = clocks.findIndex(c => c.name === launchClockName);
+                const latchIdx = clocks.findIndex(c => c.name === latchClockName);
+
+                if (launchIdx === -1 || latchIdx === -1) return;
+
+                const launchY = this.config.marginTop + this.config.timeAxisHeight + 
+                               (launchIdx * this.config.rowHeight) + this.config.rowHeight / 2;
+                const latchY = this.config.marginTop + this.config.timeAxisHeight + 
+                              (latchIdx * this.config.rowHeight) + this.config.rowHeight / 2;
+
+                // Draw the worst-case (first) relationship prominently
+                const worst = timingResults[0];
+                
+                // Launch marker (triangle pointing down)
+                const launchX = timeToX(worst.launchTime);
+                this.ctx.fillStyle = '#7fd962';
+                this.ctx.beginPath();
+                this.ctx.moveTo(launchX, launchY - this.config.waveformHeight/2 - 5);
+                this.ctx.lineTo(launchX - 6, launchY - this.config.waveformHeight/2 - 15);
+                this.ctx.lineTo(launchX + 6, launchY - this.config.waveformHeight/2 - 15);
+                this.ctx.closePath();
+                this.ctx.fill();
+
+                // Launch time annotation
+                this.ctx.fillStyle = '#7fd962';
+                this.ctx.font = '10px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(`L: ${worst.launchTime.toFixed(2)}ns`, launchX, launchY - this.config.waveformHeight/2 - 20);
+
+                // Latch marker (triangle pointing up)
+                const latchX = timeToX(worst.latchTime);
+                this.ctx.fillStyle = '#ff8f40';
+                this.ctx.beginPath();
+                this.ctx.moveTo(latchX, latchY + this.config.waveformHeight/2 + 5);
+                this.ctx.lineTo(latchX - 6, latchY + this.config.waveformHeight/2 + 15);
+                this.ctx.lineTo(latchX + 6, latchY + this.config.waveformHeight/2 + 15);
+                this.ctx.closePath();
+                this.ctx.fill();
+
+                // Latch time annotation
+                this.ctx.fillStyle = '#ff8f40';
+                this.ctx.fillText(`C: ${worst.latchTime.toFixed(2)}ns`, latchX, latchY + this.config.waveformHeight/2 + 28);
+
+                // Draw connecting line
+                this.ctx.strokeStyle = 'rgba(255, 143, 64, 0.4)';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([4, 4]);
+                this.ctx.beginPath();
+                this.ctx.moveTo(launchX, launchY);
+                this.ctx.lineTo(latchX, latchY);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+
+                // Draw window annotation
+                const midX = (launchX + latchX) / 2;
+                const midY = (launchY + latchY) / 2;
+                
+                this.ctx.fillStyle = 'rgba(57, 186, 230, 0.2)';
+                this.ctx.fillRect(launchX, Math.min(launchY, latchY) - 30, latchX - launchX, Math.abs(latchY - launchY) + 60);
+                
+                this.ctx.fillStyle = '#39bae6';
+                this.ctx.font = '600 11px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'center';
+                
+                const mcpLabel = worst.mcpApplied ? ` (MCP ${worst.mcpValue})` : '';
+                this.ctx.fillText(`Δt = ${worst.window.toFixed(2)} ns${mcpLabel}`, midX, midY - 5);
+            }
+
+            updateTimingTable(derivedResults, adjustedResults, launchClock, latchClock, analysisType, mcpSettings = {}, timingException = {}) {
+                const panel = document.getElementById('timingPanel');
+                const tbody = document.getElementById('timingTableBody');
+                
+                if ((!derivedResults || derivedResults.length === 0) && 
+                    (!adjustedResults || adjustedResults.length === 0)) {
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                panel.style.display = 'block';
+                tbody.innerHTML = '';
+
+                const setupMcp = mcpSettings.setup || 1;
+                const holdMcp = mcpSettings.hold || 0;
+                const hasExceptions = setupMcp > 1 || holdMcp > 0 || 
+                                     timingException?.maxDelay || timingException?.minDelay;
+
+                // Section: Derived (Natural) Clock Relationship
+                const derivedHeader = document.createElement('tr');
+                derivedHeader.innerHTML = `
+                    <td colspan="5" style="background: rgba(57, 186, 230, 0.1); color: var(--accent-cyan); font-weight: 600; padding: 8px 16px;">
+                        📐 Derived Clock Relationship (No Exceptions)
+                    </td>
+                `;
+                tbody.appendChild(derivedHeader);
+
+                if (derivedResults && derivedResults.length > 0) {
+                    derivedResults.slice(0, 2).forEach((result, idx) => {
+                        const row = document.createElement('tr');
+                        const isWorst = idx === 0;
+                        const pathType = analysisType === 'setup' ? 'Setup' : 'Hold';
+                        
+                        row.innerHTML = `
+                            <td>${pathType} (Derived)${isWorst ? ' ⚠️' : ''}</td>
+                            <td class="timing-value">${result.launchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${result.latchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${result.window.toFixed(3)} ns</td>
+                            <td>${isWorst ? '<span style="color: var(--accent-cyan);">Worst Case</span>' : 'Alternative'}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+
+                // Section: Adjusted with Timing Exceptions (if applicable)
+                if (hasExceptions) {
+                    const adjustedHeader = document.createElement('tr');
+                    let exceptionInfo = [];
+                    if (setupMcp > 1) exceptionInfo.push(`MCP Setup=${setupMcp}`);
+                    if (holdMcp > 0) exceptionInfo.push(`MCP Hold=${holdMcp}`);
+                    if (timingException?.maxDelay) exceptionInfo.push(`max_delay=${timingException.maxDelay.value}ns`);
+                    if (timingException?.minDelay) exceptionInfo.push(`min_delay=${timingException.minDelay.value}ns`);
+                    
+                    adjustedHeader.innerHTML = `
+                        <td colspan="5" style="background: rgba(210, 166, 255, 0.1); color: var(--accent-magenta); font-weight: 600; padding: 8px 16px;">
+                            ⚙️ Adjusted with Exceptions: ${exceptionInfo.join(', ')}
+                        </td>
+                    `;
+                    tbody.appendChild(adjustedHeader);
+
+                    if (adjustedResults && adjustedResults.length > 0) {
+                        adjustedResults.slice(0, 2).forEach((result, idx) => {
+                            const row = document.createElement('tr');
+                            const isWorst = idx === 0;
+                            const pathType = analysisType === 'setup' ? 'Setup' : 'Hold';
+                            
+                            row.innerHTML = `
+                                <td>${pathType} (Adjusted)${isWorst ? ' ⚠️' : ''}</td>
+                                <td class="timing-value">${result.launchTime.toFixed(3)} ns</td>
+                                <td class="timing-value">${result.latchTime.toFixed(3)} ns</td>
+                                <td class="timing-value">${result.window.toFixed(3)} ns</td>
+                                <td>${isWorst ? '<span style="color: var(--accent-magenta);">Critical Path</span>' : 'Alternative'}</td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                    }
+
+                    // Show constraint comparison
+                    if (derivedResults?.length > 0 && adjustedResults?.length > 0) {
+                        const derivedWorst = derivedResults[0].window;
+                        const adjustedWorst = adjustedResults[0].window;
+                        const difference = adjustedWorst - derivedWorst;
+                        const relaxed = difference > 0;
+                        
+                        const comparisonRow = document.createElement('tr');
+                        comparisonRow.innerHTML = `
+                            <td colspan="5" style="background: var(--bg-tertiary); padding: 10px 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span style="color: var(--text-secondary);">Timing Impact</span>
+                                    <span style="color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                        ${relaxed ? '↑ Relaxed' : '↓ Tightened'} by <strong>${Math.abs(difference).toFixed(3)} ns</strong>
+                                        (${derivedWorst.toFixed(2)}ns → ${adjustedWorst.toFixed(2)}ns)
+                                    </span>
+                                </div>
+                            </td>
+                        `;
+                        tbody.appendChild(comparisonRow);
+                    }
+                }
+            }
+
+            drawBidirectionalTimingMarkers(aToBResults, bToAResults, clocks, clockAName, clockBName, timeToX, mcpAtoB = {}, mcpBtoA = {}) {
+                const clockAIdx = clocks.findIndex(c => c.name === clockAName);
+                const clockBIdx = clocks.findIndex(c => c.name === clockBName);
+
+                if (clockAIdx === -1 || clockBIdx === -1) return;
+
+                const clockAY = this.config.marginTop + this.config.timeAxisHeight + 
+                               (clockAIdx * this.config.rowHeight) + this.config.rowHeight / 2;
+                const clockBY = this.config.marginTop + this.config.timeAxisHeight + 
+                              (clockBIdx * this.config.rowHeight) + this.config.rowHeight / 2;
+
+                // Draw A→B relationship (green launch, orange capture)
+                if (aToBResults && aToBResults.length > 0) {
+                    const worst = aToBResults[0];
+                    const mcpLabel = worst.mcpApplied ? ` MCP${worst.mcpValue}` : '';
+                    this.drawDirectionalMarkers(
+                        worst, clockAY, clockBY, timeToX,
+                        '#7fd962', '#ff8f40', // Launch green, capture orange
+                        `A→B${mcpLabel}`, -25, true
+                    );
+                }
+
+                // Draw B→A relationship (cyan launch, magenta capture)
+                if (bToAResults && bToAResults.length > 0) {
+                    const worst = bToAResults[0];
+                    const mcpLabel = worst.mcpApplied ? ` MCP${worst.mcpValue}` : '';
+                    this.drawDirectionalMarkers(
+                        worst, clockBY, clockAY, timeToX,
+                        '#59c2ff', '#d2a6ff', // Launch cyan, capture magenta
+                        `B→A${mcpLabel}`, 25, false
+                    );
+                }
+            }
+
+            drawDirectionalMarkers(result, launchY, captureY, timeToX, launchColor, captureColor, label, yOffset, isAtoB) {
+                const launchX = timeToX(result.launchTime);
+                const captureX = timeToX(result.latchTime);
+                const halfHeight = this.config.waveformHeight / 2;
+
+                // Launch marker (triangle pointing down from above waveform)
+                this.ctx.fillStyle = launchColor;
+                this.ctx.beginPath();
+                this.ctx.moveTo(launchX, launchY - halfHeight - 5);
+                this.ctx.lineTo(launchX - 6, launchY - halfHeight - 15);
+                this.ctx.lineTo(launchX + 6, launchY - halfHeight - 15);
+                this.ctx.closePath();
+                this.ctx.fill();
+
+                // Launch time annotation
+                this.ctx.fillStyle = launchColor;
+                this.ctx.font = '10px "JetBrains Mono", monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(`L: ${result.launchTime.toFixed(2)}ns`, launchX, launchY - halfHeight + yOffset - 5);
+
+                // Capture marker (triangle pointing up from below waveform)
+                this.ctx.fillStyle = captureColor;
+                this.ctx.beginPath();
+                this.ctx.moveTo(captureX, captureY + halfHeight + 5);
+                this.ctx.lineTo(captureX - 6, captureY + halfHeight + 15);
+                this.ctx.lineTo(captureX + 6, captureY + halfHeight + 15);
+                this.ctx.closePath();
+                this.ctx.fill();
+
+                // Capture time annotation
+                this.ctx.fillStyle = captureColor;
+                this.ctx.fillText(`C: ${result.latchTime.toFixed(2)}ns`, captureX, captureY + halfHeight - yOffset + 18);
+
+                // Draw connecting arrow
+                this.ctx.strokeStyle = isAtoB ? 'rgba(127, 217, 98, 0.5)' : 'rgba(89, 194, 255, 0.5)';
+                this.ctx.lineWidth = 2;
+                this.ctx.setLineDash([6, 4]);
+                this.ctx.beginPath();
+                this.ctx.moveTo(launchX, launchY);
+                this.ctx.lineTo(captureX, captureY);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]);
+
+                // Draw arrowhead at capture end
+                const angle = Math.atan2(captureY - launchY, captureX - launchX);
+                const arrowLen = 10;
+                this.ctx.fillStyle = isAtoB ? 'rgba(127, 217, 98, 0.8)' : 'rgba(89, 194, 255, 0.8)';
+                this.ctx.beginPath();
+                this.ctx.moveTo(captureX, captureY);
+                this.ctx.lineTo(
+                    captureX - arrowLen * Math.cos(angle - Math.PI / 6),
+                    captureY - arrowLen * Math.sin(angle - Math.PI / 6)
+                );
+                this.ctx.lineTo(
+                    captureX - arrowLen * Math.cos(angle + Math.PI / 6),
+                    captureY - arrowLen * Math.sin(angle + Math.PI / 6)
+                );
+                this.ctx.closePath();
+                this.ctx.fill();
+
+                // Draw timing window label
+                const midX = (launchX + captureX) / 2;
+                const midY = (launchY + captureY) / 2;
+                
+                // Background for label
+                const labelText = `${label}: ${result.window.toFixed(2)}ns`;
+                this.ctx.font = '600 10px "JetBrains Mono", monospace';
+                const textWidth = this.ctx.measureText(labelText).width;
+                
+                this.ctx.fillStyle = 'rgba(13, 18, 25, 0.9)';
+                this.ctx.fillRect(midX - textWidth/2 - 6, midY + yOffset/2 - 8, textWidth + 12, 16);
+                
+                this.ctx.strokeStyle = isAtoB ? launchColor : launchColor;
+                this.ctx.lineWidth = 1;
+                this.ctx.strokeRect(midX - textWidth/2 - 6, midY + yOffset/2 - 8, textWidth + 12, 16);
+                
+                this.ctx.fillStyle = isAtoB ? launchColor : launchColor;
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(labelText, midX, midY + yOffset/2 + 4);
+            }
+
+            updateBidirectionalTimingTable(derivedAtoB, derivedBtoA, adjustedAtoB, adjustedBtoA, clockAName, clockBName, mcpAtoB = {}, mcpBtoA = {}, timingExceptions = {}) {
+                const panel = document.getElementById('timingPanel');
+                const tbody = document.getElementById('timingTableBody');
+                
+                const hasDerivedAtoB = derivedAtoB && derivedAtoB.length > 0;
+                const hasDerivedBtoA = derivedBtoA && derivedBtoA.length > 0;
+                const hasAdjustedAtoB = adjustedAtoB && adjustedAtoB.length > 0;
+                const hasAdjustedBtoA = adjustedBtoA && adjustedBtoA.length > 0;
+
+                if (!hasDerivedAtoB && !hasDerivedBtoA && !hasAdjustedAtoB && !hasAdjustedBtoA) {
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                panel.style.display = 'block';
+                tbody.innerHTML = '';
+
+                // Check if any exceptions are applied
+                const hasExceptionsAB = mcpAtoB.setup > 1 || mcpAtoB.hold > 0 || 
+                                        timingExceptions?.aToB?.maxDelay || timingExceptions?.aToB?.minDelay;
+                const hasExceptionsBA = mcpBtoA.setup > 1 || mcpBtoA.hold > 0 ||
+                                        timingExceptions?.bToA?.maxDelay || timingExceptions?.bToA?.minDelay;
+
+                // ========================================
+                // DERIVED (Natural) Clock Relationships
+                // ========================================
+                const derivedSectionHeader = document.createElement('tr');
+                derivedSectionHeader.innerHTML = `
+                    <td colspan="5" style="background: rgba(57, 186, 230, 0.15); color: var(--accent-cyan); font-weight: 700; padding: 10px 16px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        📐 Derived Clock Relationships (No Timing Exceptions)
+                    </td>
+                `;
+                tbody.appendChild(derivedSectionHeader);
+
+                // A→B Derived
+                if (hasDerivedAtoB) {
+                    const sectionRow = document.createElement('tr');
+                    sectionRow.innerHTML = `
+                        <td colspan="5" style="background: rgba(127, 217, 98, 0.08); color: #7fd962; font-weight: 500; padding: 6px 16px; font-size: 11px;">
+                            ▶ ${clockAName} → ${clockBName}
+                        </td>
+                    `;
+                    tbody.appendChild(sectionRow);
+
+                    const worst = derivedAtoB[0];
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>Setup (Derived)</td>
+                        <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${worst.window.toFixed(3)} ns</td>
+                        <td><span style="color: #7fd962;">Worst Case</span></td>
+                    `;
+                    tbody.appendChild(row);
+                }
+
+                // B→A Derived
+                if (hasDerivedBtoA) {
+                    const sectionRow = document.createElement('tr');
+                    sectionRow.innerHTML = `
+                        <td colspan="5" style="background: rgba(89, 194, 255, 0.08); color: #59c2ff; font-weight: 500; padding: 6px 16px; font-size: 11px;">
+                            ◀ ${clockBName} → ${clockAName}
+                        </td>
+                    `;
+                    tbody.appendChild(sectionRow);
+
+                    const worst = derivedBtoA[0];
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>Setup (Derived)</td>
+                        <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
+                        <td class="timing-value">${worst.window.toFixed(3)} ns</td>
+                        <td><span style="color: #59c2ff;">Worst Case</span></td>
+                    `;
+                    tbody.appendChild(row);
+                }
+
+                // ========================================
+                // ADJUSTED with Timing Exceptions
+                // ========================================
+                if (hasExceptionsAB || hasExceptionsBA) {
+                    const adjustedSectionHeader = document.createElement('tr');
+                    adjustedSectionHeader.innerHTML = `
+                        <td colspan="5" style="background: rgba(210, 166, 255, 0.15); color: var(--accent-magenta); font-weight: 700; padding: 10px 16px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            ⚙️ Adjusted with Timing Exceptions Applied
+                        </td>
+                    `;
+                    tbody.appendChild(adjustedSectionHeader);
+
+                    // A→B Adjusted
+                    if (hasExceptionsAB && hasAdjustedAtoB) {
+                        let exceptionInfo = [];
+                        if (mcpAtoB.setup > 1) exceptionInfo.push(`MCP Setup=${mcpAtoB.setup} (-${mcpAtoB.setupRef})`);
+                        if (mcpAtoB.hold > 0) exceptionInfo.push(`MCP Hold=${mcpAtoB.hold} (-${mcpAtoB.holdRef})`);
+                        if (timingExceptions?.aToB?.maxDelay) exceptionInfo.push(`set_max_delay ${timingExceptions.aToB.maxDelay.value}ns`);
+                        if (timingExceptions?.aToB?.minDelay) exceptionInfo.push(`set_min_delay ${timingExceptions.aToB.minDelay.value}ns`);
+
+                        const sectionRow = document.createElement('tr');
+                        sectionRow.innerHTML = `
+                            <td colspan="5" style="background: rgba(127, 217, 98, 0.08); color: #7fd962; font-weight: 500; padding: 6px 16px; font-size: 11px;">
+                                ▶ ${clockAName} → ${clockBName} | ${exceptionInfo.join(', ')}
+                            </td>
+                        `;
+                        tbody.appendChild(sectionRow);
+
+                        const worst = adjustedAtoB[0];
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>Setup (Adjusted)</td>
+                            <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${worst.window.toFixed(3)} ns</td>
+                            <td><span style="color: var(--accent-magenta);">Critical Path</span></td>
+                        `;
+                        tbody.appendChild(row);
+
+                        // Show impact
+                        if (hasDerivedAtoB) {
+                            const derivedWindow = derivedAtoB[0].window;
+                            const adjustedWindow = worst.window;
+                            const diff = adjustedWindow - derivedWindow;
+                            const relaxed = diff > 0;
+                            
+                            const impactRow = document.createElement('tr');
+                            impactRow.innerHTML = `
+                                <td colspan="5" style="padding: 4px 16px 8px 32px; font-size: 11px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                    ${relaxed ? '↑' : '↓'} ${relaxed ? 'Relaxed' : 'Tightened'} by ${Math.abs(diff).toFixed(3)} ns (${derivedWindow.toFixed(2)} → ${adjustedWindow.toFixed(2)} ns)
+                                </td>
+                            `;
+                            tbody.appendChild(impactRow);
+                        }
+                    }
+
+                    // B→A Adjusted
+                    if (hasExceptionsBA && hasAdjustedBtoA) {
+                        let exceptionInfo = [];
+                        if (mcpBtoA.setup > 1) exceptionInfo.push(`MCP Setup=${mcpBtoA.setup} (-${mcpBtoA.setupRef})`);
+                        if (mcpBtoA.hold > 0) exceptionInfo.push(`MCP Hold=${mcpBtoA.hold} (-${mcpBtoA.holdRef})`);
+                        if (timingExceptions?.bToA?.maxDelay) exceptionInfo.push(`set_max_delay ${timingExceptions.bToA.maxDelay.value}ns`);
+                        if (timingExceptions?.bToA?.minDelay) exceptionInfo.push(`set_min_delay ${timingExceptions.bToA.minDelay.value}ns`);
+
+                        const sectionRow = document.createElement('tr');
+                        sectionRow.innerHTML = `
+                            <td colspan="5" style="background: rgba(89, 194, 255, 0.08); color: #59c2ff; font-weight: 500; padding: 6px 16px; font-size: 11px;">
+                                ◀ ${clockBName} → ${clockAName} | ${exceptionInfo.join(', ')}
+                            </td>
+                        `;
+                        tbody.appendChild(sectionRow);
+
+                        const worst = adjustedBtoA[0];
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>Setup (Adjusted)</td>
+                            <td class="timing-value">${worst.launchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${worst.latchTime.toFixed(3)} ns</td>
+                            <td class="timing-value">${worst.window.toFixed(3)} ns</td>
+                            <td><span style="color: var(--accent-magenta);">Critical Path</span></td>
+                        `;
+                        tbody.appendChild(row);
+
+                        // Show impact
+                        if (hasDerivedBtoA) {
+                            const derivedWindow = derivedBtoA[0].window;
+                            const adjustedWindow = worst.window;
+                            const diff = adjustedWindow - derivedWindow;
+                            const relaxed = diff > 0;
+                            
+                            const impactRow = document.createElement('tr');
+                            impactRow.innerHTML = `
+                                <td colspan="5" style="padding: 4px 16px 8px 32px; font-size: 11px; color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                    ${relaxed ? '↑' : '↓'} ${relaxed ? 'Relaxed' : 'Tightened'} by ${Math.abs(diff).toFixed(3)} ns (${derivedWindow.toFixed(2)} → ${adjustedWindow.toFixed(2)} ns)
+                                </td>
+                            `;
+                            tbody.appendChild(impactRow);
+                        }
+                    }
+                }
+
+                // ========================================
+                // CDC Summary
+                // ========================================
+                if ((hasDerivedAtoB || hasAdjustedAtoB) && (hasDerivedBtoA || hasAdjustedBtoA)) {
+                    const summaryRow = document.createElement('tr');
+                    
+                    // Use adjusted if available, otherwise derived
+                    const aToBWindow = (hasExceptionsAB && hasAdjustedAtoB) ? adjustedAtoB[0].window : (hasDerivedAtoB ? derivedAtoB[0].window : 0);
+                    const bToAWindow = (hasExceptionsBA && hasAdjustedBtoA) ? adjustedBtoA[0].window : (hasDerivedBtoA ? derivedBtoA[0].window : 0);
+                    const roundTrip = aToBWindow + bToAWindow;
+
+                    // Also show derived round trip for comparison
+                    const derivedRoundTrip = (hasDerivedAtoB ? derivedAtoB[0].window : 0) + (hasDerivedBtoA ? derivedBtoA[0].window : 0);
+                    const hasAdjustments = hasExceptionsAB || hasExceptionsBA;
+                    
+                    let summaryContent = `
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="color: var(--text-secondary);">CDC Handshake Summary</span>
+                                <span style="color: var(--accent-yellow);">
+                                    ${hasAdjustments ? 'Effective ' : ''}Round-Trip: <strong>${roundTrip.toFixed(3)} ns</strong>
+                                </span>
+                            </div>
+                    `;
+                    
+                    if (hasAdjustments && Math.abs(roundTrip - derivedRoundTrip) > 0.001) {
+                        const diff = roundTrip - derivedRoundTrip;
+                        const relaxed = diff > 0;
+                        summaryContent += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                                <span style="color: var(--text-muted);">Derived Round-Trip: ${derivedRoundTrip.toFixed(3)} ns</span>
+                                <span style="color: ${relaxed ? 'var(--accent-green)' : 'var(--accent-orange)'};">
+                                    ${relaxed ? '↑ +' : '↓ '}${diff.toFixed(3)} ns from exceptions
+                                </span>
+                            </div>
+                        `;
+                    }
+                    
+                    summaryContent += '</div>';
+                    
+                    summaryRow.innerHTML = `
+                        <td colspan="5" style="background: var(--bg-tertiary); padding: 12px 16px;">
+                            ${summaryContent}
+                        </td>
+                    `;
+                    tbody.appendChild(summaryRow);
+                }
+            }
+
+            drawGridLines(timeToX, totalTime, timeScale, height, width) {
+                this.ctx.strokeStyle = 'rgba(31, 45, 61, 0.5)';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([2, 4]);
+
+                const interval = this.calculateNiceInterval(totalTime);
+                for (let t = interval; t < totalTime; t += interval) {
+                    const x = timeToX(t);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, this.config.marginTop + this.config.timeAxisHeight);
+                    this.ctx.lineTo(x, height - this.config.marginBottom);
+                    this.ctx.stroke();
+                }
+
+                this.ctx.setLineDash([]);
+            }
+
+            roundRect(x, y, width, height, radius) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x + radius, y);
+                this.ctx.lineTo(x + width - radius, y);
+                this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+                this.ctx.lineTo(x + width, y + height - radius);
+                this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+                this.ctx.lineTo(x + radius, y + height);
+                this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+                this.ctx.lineTo(x, y + radius);
+                this.ctx.quadraticCurveTo(x, y, x + radius, y);
+                this.ctx.closePath();
+            }
+        }
+
+        // ============================================
+        // UI Functions
+        // ============================================
+
+        let renderer = null;
+
+        function parseAndDraw() {
+            const sdcText = document.getElementById('sdcEditor').value;
+            const statusEl = document.getElementById('parseStatus');
+
+            try {
+                // Parse SDC
+                const parser = new SDCParser(sdcText);
+                const result = parser.parse();
+
+                if (result.clocks.length === 0 && result.generatedClocks.length === 0) {
+                    setStatus('error', 'No clocks found in SDC');
+                    setAnalyzeButtonState('synced'); // Still synced, just no clocks
+                    lastAnalyzedContent = sdcText;
+                    return;
+                }
+
+                // Store multicycle paths and timing exceptions
+                multicyclePaths = result.multicyclePaths || [];
+                timingExceptions = result.timingExceptions || [];
+
+                // Calculate generated clocks
+                const calculator = new ClockCalculator(result.clocks, result.generatedClocks);
+                allClocks = calculator.resolveAll();
+
+                const mcpCount = multicyclePaths.length;
+                const teCount = timingExceptions.length;
+                let statusMsg = `Parsed ${allClocks.length} clock(s)`;
+                if (mcpCount > 0) statusMsg += `, ${mcpCount} MCP(s)`;
+                if (teCount > 0) statusMsg += `, ${teCount} timing exception(s)`;
+                setStatus('success', statusMsg);
+
+                // Update clock selectors
+                updateClockSelectors();
+
+                // Update clock info panel
+                updateClockInfoPanel();
+
+                // Apply any multicycle paths from SDC to the UI
+                applyMulticyclePathsToUI();
+
+                // Render waveforms
+                renderWaveforms();
+
+                // Mark as synced and store analyzed content
+                lastAnalyzedContent = sdcText;
+                setAnalyzeButtonState('synced');
+
+            } catch (error) {
+                console.error('Parse error:', error);
+                setStatus('error', error.message);
+                // Still mark as synced since we processed it (even if error)
+                lastAnalyzedContent = sdcText;
+                setAnalyzeButtonState('synced');
+            }
+        }
+
+        function setAnalyzeButtonState(state) {
+            const btn = document.getElementById('analyzeBtn');
+            btn.classList.remove('synced', 'out-of-sync');
+            
+            if (state === 'synced') {
+                btn.classList.add('synced');
+                btn.title = 'Analysis is up to date';
+            } else if (state === 'out-of-sync') {
+                btn.classList.add('out-of-sync');
+                btn.title = 'Changes detected - click to update analysis';
+            }
+        }
+
+        function checkEditorSync() {
+            const currentContent = document.getElementById('sdcEditor').value;
+            if (currentContent !== lastAnalyzedContent) {
+                setAnalyzeButtonState('out-of-sync');
+            } else {
+                setAnalyzeButtonState('synced');
+            }
+        }
+
+        function applyMulticyclePathsToUI() {
+            const launchClock = document.getElementById('launchClock').value;
+            const latchClock = document.getElementById('latchClock').value;
+
+            if (!launchClock || !latchClock) return;
+
+            // Find MCPs that match the selected clock pair
+            for (const mcp of multicyclePaths) {
+                const isAtoB = (mcp.fromClock === launchClock && mcp.toClock === latchClock) ||
+                              (mcp.fromClock === launchClock || mcp.toClock === latchClock);
+                const isBtoA = (mcp.fromClock === latchClock && mcp.toClock === launchClock);
+
+                if (mcp.fromClock === launchClock && mcp.toClock === latchClock) {
+                    // A→B path
+                    if (mcp.type === 'setup') {
+                        document.getElementById('mcpSetupAB').value = mcp.value;
+                        document.getElementById('mcpSetupABRef').value = mcp.reference;
+                    } else if (mcp.type === 'hold') {
+                        document.getElementById('mcpHoldAB').value = mcp.value;
+                        document.getElementById('mcpHoldABRef').value = mcp.reference;
+                    }
+                } else if (mcp.fromClock === latchClock && mcp.toClock === launchClock) {
+                    // B→A path
+                    if (mcp.type === 'setup') {
+                        document.getElementById('mcpSetupBA').value = mcp.value;
+                        document.getElementById('mcpSetupBARef').value = mcp.reference;
+                    } else if (mcp.type === 'hold') {
+                        document.getElementById('mcpHoldBA').value = mcp.value;
+                        document.getElementById('mcpHoldBARef').value = mcp.reference;
+                    }
+                }
+            }
+        }
+
+        function setStatus(type, message) {
+            const statusEl = document.getElementById('parseStatus');
+            statusEl.className = `parse-status ${type}`;
+            statusEl.innerHTML = `<span class="parse-status-dot"></span>${message}`;
+        }
+
+        function updateClockSelectors() {
+            const launchSelect = document.getElementById('launchClock');
+            const latchSelect = document.getElementById('latchClock');
+
+            // Clear existing options
+            launchSelect.innerHTML = '<option value="">-- Select --</option>';
+            latchSelect.innerHTML = '<option value="">-- Select --</option>';
+
+            // Add clock options
+            allClocks.forEach(clock => {
+                const opt1 = document.createElement('option');
+                opt1.value = clock.name;
+                opt1.textContent = clock.name;
+                launchSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = clock.name;
+                opt2.textContent = clock.name;
+                latchSelect.appendChild(opt2);
+            });
+
+            // Auto-select if we have exactly 2 clocks
+            if (allClocks.length >= 2) {
+                launchSelect.value = allClocks[0].name;
+                latchSelect.value = allClocks[1].name;
+            } else if (allClocks.length === 1) {
+                launchSelect.value = allClocks[0].name;
+                latchSelect.value = allClocks[0].name;
+            }
+        }
+
+        function updateClockInfoPanel() {
+            const panel = document.getElementById('clockInfoPanel');
+            panel.innerHTML = '';
+
+            allClocks.forEach((clock, index) => {
+                const color = clockColors[index % clockColors.length];
+                const card = document.createElement('div');
+                card.className = 'clock-card';
+                
+                const badge = clock.type === 'generated' 
+                    ? '<span class="clock-card-badge generated">Generated</span>'
+                    : '<span class="clock-card-badge">Base</span>';
+
+                let properties = `
+                    <div class="clock-property">
+                        <span class="clock-property-label">Period</span>
+                        <span class="clock-property-value">${clock.resolvedPeriod.toFixed(3)} ns</span>
+                    </div>
+                    <div class="clock-property">
+                        <span class="clock-property-label">Frequency</span>
+                        <span class="clock-property-value">${(1000 / clock.resolvedPeriod).toFixed(3)} MHz</span>
+                    </div>
+                    <div class="clock-property">
+                        <span class="clock-property-label">Rise Edge</span>
+                        <span class="clock-property-value">${clock.resolvedWaveform.rise.toFixed(3)} ns</span>
+                    </div>
+                    <div class="clock-property">
+                        <span class="clock-property-label">Fall Edge</span>
+                        <span class="clock-property-value">${clock.resolvedWaveform.fall.toFixed(3)} ns</span>
+                    </div>
+                `;
+
+                // Show target node for base clocks
+                if (clock.type === 'base' && clock.targetNode) {
+                    properties += `
+                        <div class="clock-property">
+                            <span class="clock-property-label">Target (${clock.targetType})</span>
+                            <span class="clock-property-value" style="font-size: 11px;">${clock.targetNode}</span>
+                        </div>
+                    `;
+                }
+
+                if (clock.type === 'generated') {
+                    const masterDisplay = clock.masterClockName || clock.masterClock || 'N/A';
+                    properties += `
+                        <div class="clock-property">
+                            <span class="clock-property-label">Master Clock</span>
+                            <span class="clock-property-value">${masterDisplay}</span>
+                        </div>
+                    `;
+                    if (clock.divideBy > 1) {
+                        properties += `
+                            <div class="clock-property">
+                                <span class="clock-property-label">Divide By</span>
+                                <span class="clock-property-value">${clock.divideBy}</span>
+                            </div>
+                        `;
+                    }
+                    if (clock.multiplyBy > 1) {
+                        properties += `
+                            <div class="clock-property">
+                                <span class="clock-property-label">Multiply By</span>
+                                <span class="clock-property-value">${clock.multiplyBy}</span>
+                            </div>
+                        `;
+                    }
+                }
+
+                card.innerHTML = `
+                    <div class="clock-card-header">
+                        <div class="clock-color-indicator" style="background: ${color};"></div>
+                        <span class="clock-card-title">${clock.name}</span>
+                        ${badge}
+                    </div>
+                    <div class="clock-card-body">
+                        ${properties}
+                    </div>
+                `;
+
+                panel.appendChild(card);
+            });
+        }
+
+        function renderWaveforms() {
+            if (!renderer) {
+                renderer = new WaveformRenderer(document.getElementById('waveformCanvas'));
+            }
+
+            const launchClock = document.getElementById('launchClock').value;
+            const latchClock = document.getElementById('latchClock').value;
+            const analysisType = document.getElementById('analysisType').value;
+
+            // Read MCP settings from UI
+            const mcpSettings = {
+                setupAB: parseInt(document.getElementById('mcpSetupAB').value) || 1,
+                setupABRef: document.getElementById('mcpSetupABRef').value || 'end',
+                holdAB: parseInt(document.getElementById('mcpHoldAB').value) || 0,
+                holdABRef: document.getElementById('mcpHoldABRef').value || 'start',
+                setupBA: parseInt(document.getElementById('mcpSetupBA').value) || 1,
+                setupBARef: document.getElementById('mcpSetupBARef').value || 'end',
+                holdBA: parseInt(document.getElementById('mcpHoldBA').value) || 0,
+                holdBARef: document.getElementById('mcpHoldBARef').value || 'start'
+            };
+
+            // Find applicable timing exceptions for selected clock pair
+            const applicableExceptions = findApplicableTimingExceptions(launchClock, latchClock);
+
+            // Get time scale and cycles (check for auto)
+            const timeScaleInput = document.getElementById('timeScale').value;
+            const numCyclesInput = document.getElementById('numCycles').value;
+            
+            let timeScale, numCycles, autoScaleInfo = null;
+
+            // Calculate auto time scale if needed
+            const clockA = allClocks.find(c => c.name === launchClock);
+            const clockB = allClocks.find(c => c.name === latchClock);
+
+            if ((timeScaleInput === '' || timeScaleInput === 'auto' || numCyclesInput === '' || numCyclesInput === 'auto') 
+                && clockA && clockB) {
+                // Use auto time scale calculator
+                const calculator = new AutoTimeScaleCalculator(allClocks);
+                autoScaleInfo = calculator.calculateOptimalTimeScale(clockA, clockB, mcpSettings);
+                
+                timeScale = autoScaleInfo.timeScale;
+                numCycles = autoScaleInfo.numCycles;
+
+                // Update UI hints
+                document.getElementById('timeScale').placeholder = timeScale.toFixed(1);
+                document.getElementById('numCycles').placeholder = numCycles.toString();
+            } else {
+                // Use manual values
+                timeScale = parseFloat(timeScaleInput) || 50;
+                numCycles = parseInt(numCyclesInput) || 4;
+            }
+
+            // Fallback if no clocks selected
+            if (!clockA || !clockB) {
+                const maxPeriod = Math.max(...allClocks.map(c => c.resolvedPeriod));
+                if (timeScaleInput === '' || timeScaleInput === 'auto') {
+                    timeScale = maxPeriod * 4;
+                }
+                if (numCyclesInput === '' || numCyclesInput === 'auto') {
+                    numCycles = 4;
+                }
+            }
+
+            const options = {
+                timeScale,
+                numCycles,
+                launchClock,
+                latchClock,
+                analysisType,
+                mcpSettings,
+                autoScaleInfo,
+                timingExceptions: applicableExceptions
+            };
+
+            renderer.render(allClocks, options);
+
+            // Update info
+            const infoEl = document.getElementById('waveformInfo');
+            if (allClocks.length > 0) {
+                const maxPeriod = Math.max(...allClocks.map(c => c.resolvedPeriod));
+                const totalTime = maxPeriod * numCycles;
+                let info = `${allClocks.length} clocks | ${totalTime.toFixed(1)} ns total`;
+                if (autoScaleInfo) {
+                    info += ` | Min edge sep: ${autoScaleInfo.minEdgeSeparation.toFixed(4)} ns`;
+                }
+                infoEl.textContent = info;
+            }
+        }
+
+        function findApplicableTimingExceptions(clockA, clockB) {
+            const applicable = {
+                aToB: { maxDelay: null, minDelay: null },
+                bToA: { maxDelay: null, minDelay: null }
+            };
+
+            for (const te of timingExceptions) {
+                // Check A→B direction
+                if ((te.fromClock === clockA && te.toClock === clockB) ||
+                    (te.fromClock === clockA && !te.toClock) ||
+                    (!te.fromClock && te.toClock === clockB)) {
+                    if (te.type === 'max_delay') {
+                        applicable.aToB.maxDelay = te;
+                    } else if (te.type === 'min_delay') {
+                        applicable.aToB.minDelay = te;
+                    }
+                }
+                // Check B→A direction
+                if ((te.fromClock === clockB && te.toClock === clockA) ||
+                    (te.fromClock === clockB && !te.toClock) ||
+                    (!te.fromClock && te.toClock === clockA)) {
+                    if (te.type === 'max_delay') {
+                        applicable.bToA.maxDelay = te;
+                    } else if (te.type === 'min_delay') {
+                        applicable.bToA.minDelay = te;
+                    }
+                }
+            }
+
+            return applicable;
+        }
+
+        function clearEditor() {
+            document.getElementById('sdcEditor').value = '';
+            allClocks = [];
+            multicyclePaths = [];
+            timingExceptions = [];
+            lastAnalyzedContent = '';
+            setStatus('', 'Ready');
+            setAnalyzeButtonState('synced'); // Empty editor is "synced"
+            updateClockSelectors();
+            document.getElementById('clockInfoPanel').innerHTML = '';
+            document.getElementById('timingPanel').style.display = 'none';
+            
+            // Clear loaded files display
+            updateLoadedFilesDisplay([]);
+            
+            // Reset MCP fields to defaults
+            document.getElementById('mcpSetupAB').value = 1;
+            document.getElementById('mcpSetupABRef').value = 'end';
+            document.getElementById('mcpHoldAB').value = 0;
+            document.getElementById('mcpHoldABRef').value = 'start';
+            document.getElementById('mcpSetupBA').value = 1;
+            document.getElementById('mcpSetupBARef').value = 'end';
+            document.getElementById('mcpHoldBA').value = 0;
+            document.getElementById('mcpHoldBARef').value = 'start';
+            
+            // Reset time scale to auto
+            document.getElementById('timeScale').value = '';
+            document.getElementById('numCycles').value = '';
+            
+            // Clear canvas
+            const canvas = document.getElementById('waveformCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        async function loadSDCFiles(event) {
+            const files = Array.from(event.target.files);
+            
+            if (files.length === 0) return;
+
+            // Sort files alphabetically by name to ensure consistent ordering
+            // Users can rename files with numeric prefixes (01_base.sdc, 02_generated.sdc) to control order
+            files.sort((a, b) => a.name.localeCompare(b.name));
+
+            // Show loading status
+            setStatus('', `Loading ${files.length} file(s)...`);
+
+            try {
+                const fileContents = [];
+                
+                // Read all files
+                for (const file of files) {
+                    const content = await readFileAsync(file);
+                    fileContents.push({
+                        name: file.name,
+                        content: content
+                    });
+                }
+
+                // Combine all file contents with clear separators
+                let combinedSDC = '';
+                for (const file of fileContents) {
+                    combinedSDC += `# ============================================\n`;
+                    combinedSDC += `# File: ${file.name}\n`;
+                    combinedSDC += `# ============================================\n\n`;
+                    combinedSDC += file.content;
+                    combinedSDC += '\n\n';
+                }
+
+                // Update editor with combined content
+                document.getElementById('sdcEditor').value = combinedSDC.trim();
+
+                // Update loaded files display
+                updateLoadedFilesDisplay(fileContents.map(f => f.name));
+
+                // Show success status
+                setStatus('success', `Loaded ${files.length} file(s)`);
+
+                // Auto-analyze
+                parseAndDraw();
+
+            } catch (error) {
+                console.error('File loading error:', error);
+                setStatus('error', `Error loading files: ${error.message}`);
+            }
+
+            // Reset file input so the same files can be loaded again
+            event.target.value = '';
+        }
+
+        function readFileAsync(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(new Error(`Failed to read ${file.name}`));
+                reader.readAsText(file);
+            });
+        }
+
+        function loadExample() {
+            const example = `# Example SDC Clock Constraints
+# ============================================
+
+# System clock at 100 MHz (with explicit -name)
+create_clock -name clk_sys -period 10.0 -waveform {0 5} [get_ports clk_in]
+
+# PLL output clock at 200 MHz (with explicit -name)
+create_clock -name clk_pll -period 5.0 [get_ports pll_clk]
+
+# Slower peripheral clock at 33 MHz (without -name, auto-named from port)
+create_clock -period 30.0 [get_ports periph_clk_in]
+
+# Another clock without -name, from a pin
+create_clock -period 8.0 [get_pins pll_inst/clk_out]
+
+# ============================================
+# Generated Clocks
+# ============================================
+
+# Divided clock (clk_sys / 2 = 50 MHz)
+create_generated_clock -name clk_div2 \\
+    -source [get_ports clk_in] \\
+    -master_clock clk_sys \\
+    -divide_by 2 \\
+    [get_pins clk_divider/Q]
+
+# Divided clock with phase shift (clk_sys / 4 = 25 MHz, 90° phase)
+create_generated_clock -name clk_div4_90 \\
+    -source [get_ports clk_in] \\
+    -master_clock clk_sys \\
+    -divide_by 4 \\
+    -phase 90 \\
+    [get_pins clk_gen/clk_out]
+
+# Clock derived from PLL using -master_clock
+create_generated_clock -name clk_pll_div2 \\
+    -source [get_ports pll_clk] \\
+    -master_clock clk_pll \\
+    -divide_by 2 \\
+    [get_pins pll_div/Q]
+
+# ============================================
+# Multicycle Path Constraints
+# ============================================
+
+# CDC path from clk_sys to periph_clk_in needs 2 cycles for setup
+set_multicycle_path 2 -setup -end \\
+    -from [get_clocks clk_sys] \\
+    -to [get_clocks periph_clk_in]
+
+# Corresponding hold adjustment (setup - 1)
+set_multicycle_path 1 -hold -start \\
+    -from [get_clocks clk_sys] \\
+    -to [get_clocks periph_clk_in]
+
+# Return path from periph_clk_in to clk_sys
+set_multicycle_path 3 -setup -end \\
+    -from [get_clocks periph_clk_in] \\
+    -to [get_clocks clk_sys]
+
+set_multicycle_path 2 -hold -start \\
+    -from [get_clocks periph_clk_in] \\
+    -to [get_clocks clk_sys]
+
+# ============================================
+# Timing Exception Constraints
+# ============================================
+
+# Override setup requirement for clk_sys to clk_pll path
+# Max delay constraint (affects setup analysis)
+set_max_delay 4.5 \\
+    -from [get_clocks clk_sys] \\
+    -to [get_clocks clk_pll]
+
+# Min delay constraint for hold analysis  
+set_min_delay 1.0 \\
+    -from [get_clocks clk_sys] \\
+    -to [get_clocks clk_pll]
+
+# Return path timing exceptions
+set_max_delay 3.0 \\
+    -from [get_clocks clk_pll] \\
+    -to [get_clocks clk_sys]
+
+set_min_delay 0.5 \\
+    -from [get_clocks clk_pll] \\
+    -to [get_clocks clk_sys]`;
+
+            document.getElementById('sdcEditor').value = example;
+            parseAndDraw();
+        }
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            // Setup change handlers for main controls
+            ['timeScale', 'numCycles', 'launchClock', 'latchClock', 'analysisType'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => {
+                    if (allClocks.length > 0) {
+                        renderWaveforms();
+                    }
+                });
+                document.getElementById(id).addEventListener('input', () => {
+                    if (allClocks.length > 0) {
+                        // Debounce for text inputs
+                        clearTimeout(window.renderTimeout);
+                        window.renderTimeout = setTimeout(renderWaveforms, 300);
+                    }
+                });
+            });
+
+            // Setup change handlers for MCP controls
+            ['mcpSetupAB', 'mcpSetupABRef', 'mcpHoldAB', 'mcpHoldABRef',
+             'mcpSetupBA', 'mcpSetupBARef', 'mcpHoldBA', 'mcpHoldBARef'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => {
+                    if (allClocks.length > 0) {
+                        renderWaveforms();
+                    }
+                });
+            });
+
+            // Window resize handler
+            window.addEventListener('resize', () => {
+                if (allClocks.length > 0) {
+                    renderWaveforms();
+                }
+            });
+
+            // Setup drag and drop for SDC files
+            setupDragAndDrop();
+
+            // Setup editor change detection for analyze button sync state
+            const editor = document.getElementById('sdcEditor');
+            editor.addEventListener('input', () => {
+                checkEditorSync();
+            });
+            editor.addEventListener('change', () => {
+                checkEditorSync();
+            });
+
+            // Load example on start
+            loadExample();
+        });
+
+        function setupDragAndDrop() {
+            const editorWrapper = document.getElementById('editorWrapper');
+            const dragOverlay = document.getElementById('dragOverlay');
+            const editor = document.getElementById('sdcEditor');
+
+            // Prevent default drag behaviors on the whole document
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            // Highlight drop zone when dragging over
+            ['dragenter', 'dragover'].forEach(eventName => {
+                editorWrapper.addEventListener(eventName, () => {
+                    dragOverlay.classList.add('visible');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                editorWrapper.addEventListener(eventName, () => {
+                    dragOverlay.classList.remove('visible');
+                }, false);
+            });
+
+            // Handle dropped files
+            editorWrapper.addEventListener('drop', handleDrop, false);
+
+            async function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = Array.from(dt.files);
+
+                // Filter to only .sdc and .tcl files
+                const sdcFiles = files.filter(file => {
+                    const ext = file.name.toLowerCase().split('.').pop();
+                    return ext === 'sdc' || ext === 'tcl';
+                });
+
+                if (sdcFiles.length === 0) {
+                    setStatus('error', 'No .sdc or .tcl files found. Please drop valid SDC files.');
+                    return;
+                }
+
+                if (sdcFiles.length !== files.length) {
+                    setStatus('', `Filtered to ${sdcFiles.length} SDC/TCL file(s), ignoring ${files.length - sdcFiles.length} other file(s)`);
+                }
+
+                // Process the files
+                await processDroppedFiles(sdcFiles);
+            }
+        }
+
+        async function processDroppedFiles(files) {
+            // Sort files alphabetically
+            files.sort((a, b) => a.name.localeCompare(b.name));
+
+            setStatus('', `Loading ${files.length} file(s)...`);
+
+            try {
+                const fileContents = [];
+                
+                for (const file of files) {
+                    const content = await readFileAsync(file);
+                    fileContents.push({
+                        name: file.name,
+                        content: content
+                    });
+                }
+
+                // Combine contents
+                let combinedSDC = '';
+                for (const file of fileContents) {
+                    combinedSDC += `# ============================================\n`;
+                    combinedSDC += `# File: ${file.name}\n`;
+                    combinedSDC += `# ============================================\n\n`;
+                    combinedSDC += file.content;
+                    combinedSDC += '\n\n';
+                }
+
+                document.getElementById('sdcEditor').value = combinedSDC.trim();
+
+                // Update loaded files display
+                updateLoadedFilesDisplay(fileContents.map(f => f.name));
+
+                setStatus('success', `Loaded ${files.length} file(s)`);
+                parseAndDraw();
+
+            } catch (error) {
+                console.error('File loading error:', error);
+                setStatus('error', `Error: ${error.message}`);
+            }
+        }
+
+        function updateLoadedFilesDisplay(fileNames) {
+            const infoDiv = document.getElementById('loadedFilesInfo');
+            const listDiv = document.getElementById('loadedFilesList');
+
+            if (fileNames && fileNames.length > 0) {
+                listDiv.innerHTML = fileNames.map((name, idx) => 
+                    `<span class="loaded-file-tag">${idx + 1}. ${name}</span>`
+                ).join('');
+                infoDiv.classList.add('visible');
+            } else {
+                listDiv.innerHTML = '';
+                infoDiv.classList.remove('visible');
+            }
+        }
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                parseAndDraw();
+            }
+        });
+    </script>
+</body>
+</html>
