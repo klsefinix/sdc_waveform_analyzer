@@ -1169,8 +1169,8 @@
             generateEdges(clock, totalTime) {
                 const period = clock.resolvedPeriod;
                 const waveform = clock.resolvedWaveform;
-                const riseInPeriod = waveform.rise % period;
-                const fallInPeriod = waveform.fall % period;
+                const riseInPeriod = ((waveform.rise % period) + period) % period;
+                const fallInPeriod = ((waveform.fall % period) + period) % period;
 
                 const riseEdges = [];
                 const fallEdges = [];
@@ -2046,48 +2046,55 @@
                 this.ctx.lineJoin = 'miter';
                 
                 this.ctx.beginPath();
-                
-                // Start position
-                let currentTime = 0;
-                let isHigh = waveform.rise < waveform.fall ? false : true;
-                
-                // Determine initial state at t=0
-                const riseInPeriod = waveform.rise % period;
-                const fallInPeriod = waveform.fall % period;
-                
-                if (riseInPeriod < fallInPeriod) {
-                    isHigh = false; // Starts low, rises then falls
-                } else {
-                    isHigh = true; // Starts high
-                }
-                
-                let x = timeToX(0);
-                let y = yBase + (isHigh ? -halfHeight : halfHeight);
-                this.ctx.moveTo(x, y);
-                
-                // Generate edges
+
+                // Normalize rise/fall into [0, period). The -waveform values give the
+                // absolute rise and fall times of the first cycle; a phase-shifted clock
+                // has a non-zero rise (e.g. {0.090 0.490}) and the two edges may appear in
+                // either order within the period.
+                const riseInPeriod = ((waveform.rise % period) + period) % period;
+                const fallInPeriod = ((waveform.fall % period) + period) % period;
+
+                // Generate a full sorted list of edges covering the visible window plus one
+                // cycle of guard on each side, so we can both draw and infer the level at t=0.
                 const edges = [];
-                for (let cycle = -1; cycle < Math.ceil(totalTime / period) + 1; cycle++) {
+                for (let cycle = -1; cycle < Math.ceil(totalTime / period) + 2; cycle++) {
                     const cycleStart = cycle * period;
                     edges.push({ time: cycleStart + riseInPeriod, type: 'rise' });
                     edges.push({ time: cycleStart + fallInPeriod, type: 'fall' });
                 }
-                
-                // Sort edges and filter to visible range
                 edges.sort((a, b) => a.time - b.time);
-                const visibleEdges = edges.filter(e => e.time >= 0 && e.time <= totalTime);
-                
+
+                // Determine the level at t=0 from the most recent edge at or before 0.
+                // The level held after a rise is HIGH, after a fall is LOW.
+                let initialHigh = false;
+                for (const edge of edges) {
+                    if (edge.time <= 1e-9) {
+                        initialHigh = (edge.type === 'rise');
+                    } else {
+                        break;
+                    }
+                }
+
+                // Visible edges strictly inside the window (exclude t=0 exactly so a rise
+                // sitting on the origin doesn't create a zero-width vertical glitch; its
+                // level is already captured by initialHigh).
+                const visibleEdges = edges.filter(e => e.time > 1e-9 && e.time <= totalTime + 1e-9);
+
+                let x = timeToX(0);
+                let y = yBase + (initialHigh ? -halfHeight : halfHeight);
+                this.ctx.moveTo(x, y);
+
                 // Draw waveform
                 for (const edge of visibleEdges) {
                     const edgeX = timeToX(edge.time);
                     const prevY = yBase + (edge.type === 'rise' ? halfHeight : -halfHeight);
                     const nextY = yBase + (edge.type === 'rise' ? -halfHeight : halfHeight);
-                    
-                    // Horizontal line to edge
+
+                    // Horizontal line to edge at the pre-transition level
                     this.ctx.lineTo(edgeX, prevY);
                     // Vertical transition
                     this.ctx.lineTo(edgeX, nextY);
-                    
+
                     // Store edges
                     if (edge.type === 'rise') {
                         riseEdges.push(edge.time);
@@ -2095,14 +2102,17 @@
                         fallEdges.push(edge.time);
                     }
                 }
-                
-                // Continue to end
+
+                // Continue to end at the post-transition level of the last edge
                 const lastEdge = visibleEdges[visibleEdges.length - 1];
                 if (lastEdge) {
                     const endY = yBase + (lastEdge.type === 'rise' ? -halfHeight : halfHeight);
                     this.ctx.lineTo(timeToX(totalTime), endY);
+                } else {
+                    // No transitions in window: hold the initial level across
+                    this.ctx.lineTo(timeToX(totalTime), y);
                 }
-                
+
                 this.ctx.stroke();
                 
                 // Draw edge markers (small dots at transitions)
